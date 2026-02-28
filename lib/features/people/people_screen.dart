@@ -120,7 +120,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
             child: peopleAsync.when(
               data: (people) {
                 if (people.isEmpty) {
-                  return _EmptyState(onAdd: () => context.push('/people/add'));
+                  return _EmptyState(onAdd: () => context.go('/people/add'));
                 }
 
                 final filteredPeople = people.where((p) {
@@ -171,7 +171,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                     return PersonCard(
                       person: person,
                       status: status,
-                      onTap: () => context.push('/people/${person.id}'),
+                      onTap: () => context.go('/people/${person.id}'),
                     );
                   },
                 );
@@ -184,7 +184,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/people/add'),
+        onPressed: () => context.go('/people/add'),
         tooltip: 'Add Person',
         child: const Icon(LucideIcons.userPlus),
       ),

@@ -184,8 +184,8 @@ class DashboardScreen extends ConsumerWidget {
                       return _AttentionCard(
                         person: person,
                         status: status,
-                        onTap: () => context.push('/people/${person.id}'),
-                        onLog: () => context.push('/people/${person.id}/log'),
+                        onTap: () => context.go('/people/${person.id}'),
+                        onLog: () => context.go('/people/${person.id}/log'),
                       );
                     }, childCount: needsAttention.length),
                   ),
@@ -243,15 +243,22 @@ class _HealthHeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            cs.primary,
-            cs.primary.withValues(alpha: 0.75),
-            cs.tertiary.withValues(alpha: 0.85),
-          ],
+          colors: isDark
+              ? [
+                  cs.primary.withValues(alpha: 0.7),
+                  cs.primary.withValues(alpha: 0.45),
+                  cs.tertiary.withValues(alpha: 0.55),
+                ]
+              : [
+                  cs.primary,
+                  cs.primary.withValues(alpha: 0.75),
+                  cs.tertiary.withValues(alpha: 0.85),
+                ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -557,8 +564,7 @@ class _RecentlyContactedSection extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: () =>
-                            context.push('/people/${contact.personId}'),
+                        onTap: () => context.go('/people/${contact.personId}'),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -791,7 +797,7 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
                       ),
                       onTap: () {
                         Navigator.pop(context); // Close sheet
-                        context.push('/people/${person.id}/log');
+                        context.go('/people/${person.id}/log');
                       },
                     );
                   },

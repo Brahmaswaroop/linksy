@@ -114,7 +114,7 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
               OutlinedButton.icon(
                 onPressed: () {
                   context.pop();
-                  context.push(
+                  context.go(
                     '/people/add?linkToPersonId=${widget.sourcePersonId}',
                   );
                 },

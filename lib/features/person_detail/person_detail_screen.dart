@@ -52,7 +52,7 @@ class PersonDetailScreen extends ConsumerWidget {
                 actions: [
                   IconButton(
                     icon: const Icon(LucideIcons.edit, color: Colors.white),
-                    onPressed: () => context.push('/people/$personId/edit'),
+                    onPressed: () => context.go('/people/$personId/edit'),
                   ),
                 ],
                 flexibleSpace: FlexibleSpaceBar(
@@ -212,7 +212,7 @@ class PersonDetailScreen extends ConsumerWidget {
                       ),
                       const Spacer(),
                       FilledButton.icon(
-                        onPressed: () => context.push('/people/$personId/log'),
+                        onPressed: () => context.go('/people/$personId/log'),
                         icon: const Icon(LucideIcons.plusCircle, size: 14),
                         label: const Text('Log'),
                         style: FilledButton.styleFrom(
@@ -418,7 +418,7 @@ class _ConnectionsSection extends ConsumerWidget {
                                 size: 16,
                               ),
                               onPressed: () =>
-                                  context.push('/people/${other.id}'),
+                                  context.go('/people/${other.id}'),
                             ),
                           ),
                           loading: () =>

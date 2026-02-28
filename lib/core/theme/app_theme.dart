@@ -45,7 +45,10 @@ class AppTheme {
       ),
       chipTheme: base.chipTheme.copyWith(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        labelStyle: base.chipTheme.labelStyle?.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -85,7 +88,14 @@ class AppTheme {
       ),
       chipTheme: base.chipTheme.copyWith(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        labelStyle: base.chipTheme.labelStyle?.copyWith(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
+        backgroundColor: light.colorScheme.primaryContainer,
+        foregroundColor: light.colorScheme.onPrimaryContainer,
       ),
     );
   }
