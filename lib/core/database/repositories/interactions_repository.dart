@@ -18,6 +18,27 @@ Stream<List<Interaction>> personInteractions(Ref ref, int personId) {
       .watchInteractionsForPerson(personId);
 }
 
+/// Holds a recent interaction paired with the person's name
+class RecentContact {
+  final String personName;
+  final int personId;
+  final DateTime date;
+  final String type;
+
+  RecentContact({
+    required this.personName,
+    required this.personId,
+    required this.date,
+    required this.type,
+  });
+}
+
+@riverpod
+Stream<List<RecentContact>> recentlyContactedPeople(Ref ref) {
+  final repo = ref.watch(interactionsRepositoryProvider);
+  return repo.watchRecentContacts(limit: 5);
+}
+
 class InteractionsRepository {
   final AppDatabase _db;
   InteractionsRepository(this._db);
@@ -29,6 +50,29 @@ class InteractionsRepository {
             (t) => OrderingTerm(expression: t.date, mode: OrderingMode.desc),
           ]))
         .watch();
+  }
+
+  Stream<List<RecentContact>> watchRecentContacts({int limit = 5}) {
+    final query = _db.select(_db.interactions).join([
+      innerJoin(_db.people, _db.people.id.equalsExp(_db.interactions.personId)),
+    ]);
+    query.orderBy([
+      OrderingTerm(expression: _db.interactions.date, mode: OrderingMode.desc),
+    ]);
+    query.limit(limit);
+
+    return query.watch().map((rows) {
+      return rows.map((row) {
+        final interaction = row.readTable(_db.interactions);
+        final person = row.readTable(_db.people);
+        return RecentContact(
+          personName: person.name,
+          personId: person.id,
+          date: interaction.date,
+          type: interaction.type,
+        );
+      }).toList();
+    });
   }
 
   Future<int> logInteraction(InteractionsCompanion interaction) async {
@@ -56,6 +100,13 @@ class InteractionsRepository {
       await _updatePersonAverageGapAndDate(interaction.personId);
 
       return result;
+    });
+  }
+
+  Future<void> updateInteraction(Interaction updated) async {
+    await _db.transaction(() async {
+      await _db.update(_db.interactions).replace(updated);
+      await _updatePersonAverageGapAndDate(updated.personId);
     });
   }
 

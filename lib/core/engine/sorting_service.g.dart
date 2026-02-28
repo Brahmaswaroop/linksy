@@ -39,7 +39,7 @@ final sortOrderProvider =
     );
 
 typedef _$SortOrder = AutoDisposeNotifier<PersonSortOrder>;
-String _$sortingServiceHash() => r'3f7d8b63e0a9723efed18119954315aebce048af';
+String _$sortingServiceHash() => r'8291603ed1bb588353ab39c189e7504f42cda04d';
 
 /// See also [SortingService].
 @ProviderFor(SortingService)

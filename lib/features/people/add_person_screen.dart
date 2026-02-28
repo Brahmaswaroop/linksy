@@ -27,7 +27,7 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
   late TextEditingController
   _relationController; // Used as the specific relation label
   final Set<int> _selectedLabelIds = {};
-  int _targetFrequencyDays = 30;
+  int _targetFrequencyDays = 14;
   int _priorityLevel = 2; // 1 = Low, 2 = Medium, 3 = High
   String _category = 'Friend'; // Default category
 

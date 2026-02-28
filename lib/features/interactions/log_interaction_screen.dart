@@ -18,7 +18,12 @@ const _interactionTypes = [
 
 class LogInteractionScreen extends ConsumerStatefulWidget {
   final int personId;
-  const LogInteractionScreen({super.key, required this.personId});
+  final Interaction? existingInteraction;
+  const LogInteractionScreen({
+    super.key,
+    required this.personId,
+    this.existingInteraction,
+  });
 
   @override
   ConsumerState<LogInteractionScreen> createState() =>
@@ -30,6 +35,21 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
   final _notesController = TextEditingController();
   String _type = 'Message';
   int _energyRating = 3;
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existingInteraction;
+    if (existing != null) {
+      _type = existing.type;
+      _energyRating = existing.energyRating ?? 3;
+      _notesController.text = existing.notes ?? '';
+      _selectedDate = existing.date;
+    } else {
+      _selectedDate = DateTime.now();
+    }
+  }
 
   @override
   void dispose() {
@@ -37,19 +57,31 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
     super.dispose();
   }
 
+  bool get _isEditing => widget.existingInteraction != null;
+
   void _save() async {
     if (_formKey.currentState!.validate()) {
       final repository = ref.read(interactionsRepositoryProvider);
 
-      await repository.logInteraction(
-        InteractionsCompanion.insert(
-          personId: widget.personId,
-          date: Value(DateTime.now()),
+      if (_isEditing) {
+        final updated = widget.existingInteraction!.copyWith(
+          type: _type,
+          date: _selectedDate,
           notes: Value(_notesController.text.trim()),
-          type: Value(_type),
           energyRating: Value(_energyRating),
-        ),
-      );
+        );
+        await repository.updateInteraction(updated);
+      } else {
+        await repository.logInteraction(
+          InteractionsCompanion.insert(
+            personId: widget.personId,
+            date: Value(_selectedDate),
+            notes: Value(_notesController.text.trim()),
+            type: Value(_type),
+            energyRating: Value(_energyRating),
+          ),
+        );
+      }
 
       if (mounted) {
         context.pop();
@@ -65,7 +97,7 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Log Interaction',
+          _isEditing ? 'Edit Interaction' : 'Log Interaction',
           style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
         actions: [
@@ -145,6 +177,124 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
                     ),
                   );
                 }).toList(),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Date & Time Picker ────────────────────────────────────────
+            _SectionCard(
+              icon: LucideIcons.calendar,
+              title: 'Date & Time',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: _selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now(),
+                        );
+                        if (date != null) {
+                          setState(() {
+                            _selectedDate = DateTime(
+                              date.year,
+                              date.month,
+                              date.day,
+                              _selectedDate.hour,
+                              _selectedDate.minute,
+                            );
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.4,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: cs.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              LucideIcons.calendar,
+                              size: 16,
+                              color: cs.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                              style: tt.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.fromDateTime(_selectedDate),
+                        );
+                        if (time != null) {
+                          setState(() {
+                            _selectedDate = DateTime(
+                              _selectedDate.year,
+                              _selectedDate.month,
+                              _selectedDate.day,
+                              time.hour,
+                              time.minute,
+                            );
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.4,
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: cs.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              LucideIcons.clock,
+                              size: 16,
+                              color: cs.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatTime(_selectedDate),
+                              style: tt.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -239,6 +389,13 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
       Color(0xFF4CAF50), // 5 – energizing
     ];
     return colors[(rating - 1).clamp(0, 4)];
+  }
+
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
   }
 }
 

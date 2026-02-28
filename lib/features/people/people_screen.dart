@@ -86,15 +86,6 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
               });
             },
           ),
-          if (!_isSearching)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: IconButton.filled(
-                icon: const Icon(LucideIcons.userPlus, size: 18),
-                onPressed: () => context.push('/people/add'),
-                tooltip: 'Add Person',
-              ),
-            ),
         ],
       ),
       body: Column(
@@ -166,7 +157,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
 
                 return ListView.builder(
                   itemCount: filteredPeople.length,
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
                   itemBuilder: (context, index) {
                     final person = filteredPeople[index];
                     final status = engine.calculateHealth(
@@ -174,6 +165,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                       lastInteractionDate: person.lastInteractionDate,
                       priorityLevel: person.priorityLevel,
                       averageGapDays: person.averageGapDays,
+                      createdAt: person.createdAt,
                     );
 
                     return PersonCard(
@@ -190,6 +182,11 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/people/add'),
+        tooltip: 'Add Person',
+        child: const Icon(LucideIcons.userPlus),
       ),
     );
   }

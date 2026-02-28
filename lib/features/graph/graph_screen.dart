@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/database/database_provider.dart';
 
 // ── Models ─────────────────────────────────────────────────────────────
@@ -386,19 +387,7 @@ class _NetworkPainter extends CustomPainter {
       if (node.isUser) {
         nodeColor = cs.primary;
       } else {
-        switch (node.category) {
-          case 'Family':
-            nodeColor = Colors.purple.shade400;
-            break;
-          case 'Friend':
-            nodeColor = Colors.blue.shade400;
-            break;
-          case 'Colleague':
-            nodeColor = Colors.teal.shade400;
-            break;
-          default:
-            nodeColor = cs.secondary;
-        }
+        nodeColor = colorForCategory(node.category);
       }
 
       canvas.drawCircle(

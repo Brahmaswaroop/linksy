@@ -10,6 +10,7 @@ import '../../features/people/people_screen.dart';
 import '../../features/people/add_person_screen.dart';
 import '../../features/person_detail/person_detail_screen.dart';
 import '../../features/interactions/log_interaction_screen.dart';
+import '../../features/settings/settings_screen.dart';
 
 part 'app_router.g.dart';
 
@@ -81,6 +82,10 @@ GoRouter goRouter(Ref ref) {
             builder: (context, state) => const GraphScreen(),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );

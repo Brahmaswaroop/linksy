@@ -43,6 +43,7 @@ void callbackDispatcher() {
           lastInteractionDate: lastInteractionDate,
           priorityLevel: person.priorityLevel,
           averageGapDays: person.averageGapDays,
+          createdAt: person.createdAt,
         );
 
         if (healthStatus.daysOverdue > 0) {

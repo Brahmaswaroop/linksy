@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import '../../core/database/repositories/people_repository.dart';
+import '../../core/database/repositories/interactions_repository.dart';
 import '../../core/engine/health_score_engine.dart';
 import '../../core/database/database.dart';
 import '../../core/theme/app_theme.dart';
@@ -24,17 +26,12 @@ class DashboardScreen extends ConsumerWidget {
           style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton.icon(
-              onPressed: () => context.push('/people/add'),
-              icon: const Icon(LucideIcons.userPlus, size: 16),
-              label: const Text('Add'),
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
+          IconButton(
+            icon: const Icon(LucideIcons.settings),
+            onPressed: () => context.push('/settings'),
+            tooltip: 'Settings',
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: peopleAsync.when(
@@ -51,6 +48,7 @@ class DashboardScreen extends ConsumerWidget {
               lastInteractionDate: person.lastInteractionDate,
               priorityLevel: person.priorityLevel,
               averageGapDays: person.averageGapDays,
+              createdAt: person.createdAt,
             );
 
             if (status.statusEmoji == '🟢') {
@@ -192,11 +190,37 @@ class DashboardScreen extends ConsumerWidget {
                     }, childCount: needsAttention.length),
                   ),
                 ),
+
+              // ── Recently Contacted Section ──────────────────────────────
+              SliverToBoxAdapter(child: _RecentlyContactedSection()),
             ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Error loading data: $err')),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (sheetContext) {
+              return DraggableScrollableSheet(
+                initialChildSize: 0.6,
+                minChildSize: 0.4,
+                maxChildSize: 0.9,
+                expand: false,
+                builder: (_, scrollController) {
+                  return _LogInteractionSheet(
+                    scrollController: scrollController,
+                  );
+                },
+              );
+            },
+          );
+        },
+        icon: const Icon(LucideIcons.plusCircle),
+        label: const Text('Log'),
       ),
     );
   }
@@ -427,6 +451,21 @@ class _AttentionCard extends StatelessWidget {
                               color: cs.onSurface.withValues(alpha: 0.6),
                             ),
                           ),
+                          const SizedBox(width: 12),
+                          Icon(
+                            LucideIcons.clock,
+                            size: 12,
+                            color: cs.onSurface.withValues(alpha: 0.4),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            person.lastInteractionDate == null
+                                ? 'Never'
+                                : timeago.format(person.lastInteractionDate!),
+                            style: tt.bodySmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -455,6 +494,314 @@ class _AttentionCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Recently Contacted Section ─────────────────────────────────────────────
+
+class _RecentlyContactedSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final recentAsync = ref.watch(recentlyContactedPeopleProvider);
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: cs.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Recently Contacted',
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+          recentAsync.when(
+            data: (contacts) {
+              if (contacts.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: Text(
+                      'No interactions logged yet.',
+                      style: tt.bodySmall?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: contacts.map((contact) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Material(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () =>
+                            context.push('/people/${contact.personId}'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: avatarColorFromName(
+                                  contact.personName,
+                                ),
+                                child: Text(
+                                  contact.personName[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      contact.personName,
+                                      style: tt.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          _iconForType(contact.type),
+                                          size: 12,
+                                          color: cs.onSurface.withValues(
+                                            alpha: 0.4,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          contact.type,
+                                          style: tt.labelSmall?.copyWith(
+                                            color: cs.onSurface.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                timeago.format(contact.date),
+                                style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurface.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+            error: (err, _) => Text('Error: $err'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static IconData _iconForType(String type) {
+    switch (type.toLowerCase()) {
+      case 'call':
+        return LucideIcons.phone;
+      case 'meeting':
+        return LucideIcons.coffee;
+      case 'note':
+        return LucideIcons.fileText;
+      default:
+        return LucideIcons.messageCircle;
+    }
+  }
+}
+
+// ── Log Interaction Sheet ────────────────────────────────────────────────
+
+class _LogInteractionSheet extends ConsumerStatefulWidget {
+  final ScrollController scrollController;
+
+  const _LogInteractionSheet({required this.scrollController});
+
+  @override
+  ConsumerState<_LogInteractionSheet> createState() =>
+      _LogInteractionSheetState();
+}
+
+class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
+  String _searchQuery = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final peopleAsync = ref.watch(allPeopleProvider);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Log Interaction For...',
+                    style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(LucideIcons.x),
+                ),
+              ],
+            ),
+          ),
+          // Search Field
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Search people...',
+                prefixIcon: const Icon(LucideIcons.search, size: 20),
+                filled: true,
+                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 0,
+                  horizontal: 16,
+                ),
+              ),
+              onChanged: (val) {
+                setState(() => _searchQuery = val.toLowerCase());
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          // List
+          Expanded(
+            child: peopleAsync.when(
+              data: (people) {
+                final filtered = people.where((p) {
+                  return p.name.toLowerCase().contains(_searchQuery);
+                }).toList();
+
+                if (filtered.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No people found.',
+                      style: TextStyle(
+                        color: cs.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  controller: widget.scrollController,
+                  itemCount: filtered.length,
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemBuilder: (context, index) {
+                    final person = filtered[index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 4,
+                      ),
+                      leading: CircleAvatar(
+                        radius: 20,
+                        backgroundColor: avatarColorFromName(person.name),
+                        child: Text(
+                          person.name[0].toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        person.name,
+                        style: tt.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      trailing: Icon(
+                        LucideIcons.chevronRight,
+                        size: 20,
+                        color: cs.onSurface.withValues(alpha: 0.3),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context); // Close sheet
+                        context.push('/people/${person.id}/log');
+                      },
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (err, _) => Center(child: Text('Error: $err')),
+            ),
+          ),
+        ],
       ),
     );
   }

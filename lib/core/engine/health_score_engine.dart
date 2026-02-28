@@ -33,21 +33,17 @@ class HealthScoreEngine {
     required DateTime? lastInteractionDate,
     required int priorityLevel,
     required double? averageGapDays,
+    required DateTime createdAt,
   }) {
-    if (lastInteractionDate == null) {
-      return RelationshipTargetStatus(
-        baseScore: 0,
-        totalScoreWithPriority: 0,
-        priorityLevel: priorityLevel,
-        daysOverdue: targetFrequencyDays,
-        statusEmoji: '🔴',
-        progressPercent: 0.0,
-      );
-    }
+    // Use lastInteractionDate if available, otherwise fall back to createdAt
+    final baseDate = lastInteractionDate ?? createdAt;
 
     final now = DateTime.now();
-    final difference = now.difference(lastInteractionDate).inDays;
-    final daysOverdue = difference - targetFrequencyDays;
+    final nextDueDate = baseDate.add(Duration(days: targetFrequencyDays));
+    final daysOverdue = now.difference(nextDueDate).inDays;
+    // daysOverdue > 0 → overdue by that many days
+    // daysOverdue == 0 → due today
+    // daysOverdue < 0 → due in abs(daysOverdue) days
 
     // 1. Frequency Score (50%)
     double fRatio = 1.0;
@@ -103,7 +99,7 @@ class HealthScoreEngine {
       baseScore: baseScore,
       totalScoreWithPriority: totalScoreWithPriority,
       priorityLevel: priorityLevel,
-      daysOverdue: daysOverdue > 0 ? daysOverdue : 0,
+      daysOverdue: daysOverdue,
       statusEmoji: statusEmoji,
       progressPercent: baseScore / 100.0,
     );

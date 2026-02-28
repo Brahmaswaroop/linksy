@@ -45,12 +45,14 @@ class SortingService extends _$SortingService {
             lastInteractionDate: a.lastInteractionDate,
             priorityLevel: a.priorityLevel,
             averageGapDays: a.averageGapDays,
+            createdAt: a.createdAt,
           );
           final statusB = engine.calculateHealth(
             targetFrequencyDays: b.targetFrequencyDays,
             lastInteractionDate: b.lastInteractionDate,
             priorityLevel: b.priorityLevel,
             averageGapDays: b.averageGapDays,
+            createdAt: b.createdAt,
           );
           // Positive daysOverdue means more overdue. Sort descending.
           return statusB.daysOverdue.compareTo(statusA.daysOverdue);
@@ -62,12 +64,14 @@ class SortingService extends _$SortingService {
             lastInteractionDate: a.lastInteractionDate,
             priorityLevel: a.priorityLevel,
             averageGapDays: a.averageGapDays,
+            createdAt: a.createdAt,
           );
           final statusB = engine.calculateHealth(
             targetFrequencyDays: b.targetFrequencyDays,
             lastInteractionDate: b.lastInteractionDate,
             priorityLevel: b.priorityLevel,
             averageGapDays: b.averageGapDays,
+            createdAt: b.createdAt,
           );
           // Sort ascending (lowest score first)
           return statusA.baseScore.compareTo(statusB.baseScore);

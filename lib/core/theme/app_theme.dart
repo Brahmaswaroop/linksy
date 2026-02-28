@@ -2,42 +2,50 @@ import 'package:flex_color_scheme/flex_color_scheme.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// Seed color: warm coral-rose
-const _seedColor = Color(0xFFE8654E);
+// Seed color: warm, calming peach-terracotta
+const _seedColor = Color(0xFFF27B66);
 
 class AppTheme {
   // ── Light ──────────────────────────────────────────────────────────────────
   static ThemeData get light {
     final base = FlexThemeData.light(
       colors: FlexSchemeColor.from(primary: _seedColor),
-      surfaceMode: FlexSurfaceMode.highScaffoldLowSurface,
-      blendLevel: 8,
+      surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
+      blendLevel: 2, // Very low blend for a clean, flat Daylio look
       subThemesData: _subThemes,
-      keyColors: FlexKeyColors(useSecondary: true, useTertiary: true),
-      tones: FlexTones.chroma(Brightness.light),
+      keyColors: const FlexKeyColors(useSecondary: true, useTertiary: true),
+      tones: FlexTones.soft(Brightness.light),
       visualDensity: FlexColorScheme.comfortablePlatformDensity,
       useMaterial3: true,
       swapLegacyOnMaterial3: true,
-      fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
-      textTheme: GoogleFonts.plusJakartaSansTextTheme(),
+      fontFamily: GoogleFonts.nunito().fontFamily,
+      textTheme: GoogleFonts.nunitoTextTheme(),
     );
 
     return base.copyWith(
+      scaffoldBackgroundColor: const Color(
+        0xFFF8F9FA,
+      ), // Clean, slightly off-white background
       cardTheme: base.cardTheme.copyWith(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 1.5,
+        shadowColor: Colors.black.withValues(alpha: 0.1),
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       appBarTheme: base.appBarTheme.copyWith(
         elevation: 0,
-        scrolledUnderElevation: 2,
+        backgroundColor: const Color(
+          0xFFF8F9FA,
+        ), // Match scaffold for seamless look
+        scrolledUnderElevation: 0, // Keep it perfectly flat even when scrolling
         centerTitle: false,
       ),
       listTileTheme: base.listTileTheme.copyWith(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
       chipTheme: base.chipTheme.copyWith(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -46,44 +54,49 @@ class AppTheme {
   static ThemeData get dark {
     final base = FlexThemeData.dark(
       colors: FlexSchemeColor.from(primary: _seedColor),
-      surfaceMode: FlexSurfaceMode.highScaffoldLowSurface,
-      blendLevel: 15,
+      surfaceMode: FlexSurfaceMode.levelSurfacesLowScaffold,
+      blendLevel: 4, // Very low blend for dark mode as well
       subThemesData: _subThemes,
       keyColors: FlexKeyColors(useSecondary: true, useTertiary: true),
       tones: FlexTones.chroma(Brightness.dark),
       visualDensity: FlexColorScheme.comfortablePlatformDensity,
       useMaterial3: true,
       swapLegacyOnMaterial3: true,
-      fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
-      textTheme: GoogleFonts.plusJakartaSansTextTheme(),
+      fontFamily: GoogleFonts.nunito().fontFamily,
+      textTheme: GoogleFonts.nunitoTextTheme(),
     );
 
     return base.copyWith(
+      scaffoldBackgroundColor: const Color(0xFF121212), // Pure dark background
       cardTheme: base.cardTheme.copyWith(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.3),
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       appBarTheme: base.appBarTheme.copyWith(
         elevation: 0,
-        scrolledUnderElevation: 2,
+        backgroundColor: const Color(0xFF121212),
+        scrolledUnderElevation: 0,
         centerTitle: false,
       ),
       listTileTheme: base.listTileTheme.copyWith(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
       chipTheme: base.chipTheme.copyWith(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
     );
   }
 
   static const FlexSubThemesData _subThemes = FlexSubThemesData(
-    blendOnLevel: 10,
+    blendOnLevel: 5,
     blendOnColors: false,
     useMaterial3Typography: true,
     useM2StyleDividerInM3: true,
-    defaultRadius: 16.0,
+    defaultRadius:
+        20.0, // Reduced from 24 for a slightly more structured but playful look
     elevatedButtonSchemeColor: SchemeColor.onPrimaryContainer,
     elevatedButtonSecondarySchemeColor: SchemeColor.primaryContainer,
     outlinedButtonOutlineSchemeColor: SchemeColor.primary,
@@ -93,26 +106,26 @@ class AppTheme {
     unselectedToggleIsColored: true,
     sliderValueTinted: true,
     inputDecoratorSchemeColor: SchemeColor.primary,
-    inputDecoratorBackgroundAlpha: 25,
+    inputDecoratorBackgroundAlpha: 15, // Softer input backgrounds
     inputDecoratorUnfocusedHasBorder: false,
     inputDecoratorFocusedBorderWidth: 1.5,
     inputDecoratorPrefixIconSchemeColor: SchemeColor.primary,
-    inputDecoratorRadius: 12.0,
+    inputDecoratorRadius: 16.0,
     fabUseShape: true,
     fabAlwaysCircular: true,
-    fabSchemeColor: SchemeColor.primary,
-    popupMenuRadius: 10.0,
-    popupMenuElevation: 4.0,
+    fabSchemeColor: SchemeColor.primaryContainer,
+    popupMenuRadius: 16.0,
+    popupMenuElevation: 3.0,
     alignedDropdown: true,
     useInputDecoratorThemeInDialogs: true,
-    drawerIndicatorRadius: 12.0,
+    drawerIndicatorRadius: 20.0,
     drawerIndicatorSchemeColor: SchemeColor.primary,
     bottomNavigationBarMutedUnselectedIcon: true,
     bottomNavigationBarMutedUnselectedLabel: true,
-    menuRadius: 10.0,
-    menuElevation: 4.0,
+    menuRadius: 16.0,
+    menuElevation: 3.0,
     menuBarRadius: 0.0,
-    menuBarElevation: 2.0,
+    menuBarElevation: 1.0,
     menuBarShadowColor: Color(0x00000000),
     navigationBarSelectedLabelSchemeColor: SchemeColor.primary,
     navigationBarMutedUnselectedLabel: false,
@@ -149,6 +162,21 @@ Color avatarColorFromName(String name) {
   ];
   final index = name.codeUnits.fold(0, (sum, c) => sum + c) % colors.length;
   return colors[index];
+}
+
+/// Category color mapping for relationship types
+Color colorForCategory(String category) {
+  switch (category) {
+    case 'Family':
+      return const Color(0xFFE57373); // red
+    case 'Friend':
+      return const Color(0xFF42A5F5); // Blue 400
+    case 'Colleague':
+      return const Color(0xFF9575CD); // deep purple
+    case 'Other':
+    default:
+      return const Color(0xFF90A4AE); // Blue Grey 400
+  }
 }
 
 /// Health color: green/amber/red based on score.

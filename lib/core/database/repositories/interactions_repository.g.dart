@@ -169,5 +169,25 @@ class _PersonInteractionsProviderElement
   int get personId => (origin as PersonInteractionsProvider).personId;
 }
 
+String _$recentlyContactedPeopleHash() =>
+    r'b9b91a861dec57ba0d76c6f53429790e758130a4';
+
+/// See also [recentlyContactedPeople].
+@ProviderFor(recentlyContactedPeople)
+final recentlyContactedPeopleProvider =
+    AutoDisposeStreamProvider<List<RecentContact>>.internal(
+      recentlyContactedPeople,
+      name: r'recentlyContactedPeopleProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$recentlyContactedPeopleHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef RecentlyContactedPeopleRef =
+    AutoDisposeStreamProviderRef<List<RecentContact>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

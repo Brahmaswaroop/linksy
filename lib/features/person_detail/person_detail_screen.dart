@@ -12,6 +12,7 @@ import '../../core/database/repositories/person_connections_repository.dart';
 import '../../core/engine/health_score_engine.dart';
 import '../../core/utils/frequency_formatter.dart';
 import '../../core/theme/app_theme.dart';
+import '../interactions/log_interaction_screen.dart';
 import 'add_connection_sheet.dart';
 
 class PersonDetailScreen extends ConsumerWidget {
@@ -35,6 +36,7 @@ class PersonDetailScreen extends ConsumerWidget {
             lastInteractionDate: person.lastInteractionDate,
             priorityLevel: person.priorityLevel,
             averageGapDays: person.averageGapDays,
+            createdAt: person.createdAt,
           );
           final avatarColor = avatarColorFromName(person.name);
           final score = status.baseScore;
@@ -111,7 +113,7 @@ class PersonDetailScreen extends ConsumerWidget {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.25),
+                                color: colorForCategory(person.category),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
@@ -263,6 +265,16 @@ class PersonDetailScreen extends ConsumerWidget {
                         return _TimelineItem(
                           interaction: interaction,
                           isLast: isLast,
+                          onEdit: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => LogInteractionScreen(
+                                  personId: personId,
+                                  existingInteraction: interaction,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       }, childCount: interactions.length),
                     ),
@@ -572,8 +584,13 @@ class _StatRow extends StatelessWidget {
 class _TimelineItem extends StatelessWidget {
   final Interaction interaction;
   final bool isLast;
+  final VoidCallback? onEdit;
 
-  const _TimelineItem({required this.interaction, required this.isLast});
+  const _TimelineItem({
+    required this.interaction,
+    required this.isLast,
+    this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -614,43 +631,58 @@ class _TimelineItem extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          interaction.type,
-                          style: tt.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
+              child: GestureDetector(
+                onTap: onEdit,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            interaction.type,
+                            style: tt.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                timeago.format(interaction.date),
+                                style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurface.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              Text(
+                                _formatDateTime(interaction.date),
+                                style: tt.labelSmall?.copyWith(
+                                  color: cs.onSurface.withValues(alpha: 0.35),
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (interaction.notes != null &&
+                          interaction.notes!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
                         Text(
-                          timeago.format(interaction.date),
-                          style: tt.labelSmall?.copyWith(
-                            color: cs.onSurface.withValues(alpha: 0.5),
+                          interaction.notes!,
+                          style: tt.bodySmall?.copyWith(
+                            color: cs.onSurface.withValues(alpha: 0.7),
                           ),
                         ),
                       ],
-                    ),
-                    if (interaction.notes != null &&
-                        interaction.notes!.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        interaction.notes!,
-                        style: tt.bodySmall?.copyWith(
-                          color: cs.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -671,5 +703,26 @@ class _TimelineItem extends StatelessWidget {
       default:
         return LucideIcons.messageCircle;
     }
+  }
+
+  String _formatDateTime(DateTime dt) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}, $hour:$minute $period';
   }
 }

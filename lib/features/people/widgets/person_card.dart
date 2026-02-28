@@ -118,8 +118,8 @@ class PersonCard extends ConsumerWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: cs.primaryContainer,
-                                borderRadius: BorderRadius.circular(6),
+                                color: colorForCategory(person.category),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
                                 person.relation != null &&
@@ -127,8 +127,9 @@ class PersonCard extends ConsumerWidget {
                                     ? '${person.category} • ${person.relation}'
                                     : person.category,
                                 style: tt.labelSmall?.copyWith(
-                                  color: cs.onPrimaryContainer,
-                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                             ),
