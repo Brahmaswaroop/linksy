@@ -147,10 +147,10 @@ class InteractionsRepository {
         .replace(
           person.copyWith(
             lastInteractionDate: interactions.isEmpty
-                ? const Value.absent()
+                ? const Value(null)
                 : Value(lastInteractionDate),
             averageGapDays: averageGapDays == null
-                ? const Value.absent() // clear it if they drop under 2
+                ? const Value(null) // clear it if they drop under 2
                 : Value(averageGapDays),
           ),
         );

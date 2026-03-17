@@ -9,6 +9,7 @@ import '../../core/database/database.dart';
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/labels_repository.dart';
 import '../../core/database/repositories/person_connections_repository.dart';
+import '../../core/utils/relation_helper.dart';
 import '../../core/utils/frequency_formatter.dart';
 
 class AddPersonScreen extends ConsumerStatefulWidget {
@@ -34,6 +35,8 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
   static const _categories = ['Friend', 'Family', 'Colleague', 'Other'];
 
   bool _isLoading = false;
+  bool _isWeak = false;
+  int? _intermediatePersonId;
 
   @override
   void initState() {
@@ -42,6 +45,8 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
     _relationController = TextEditingController();
     if (widget.personId != null) {
       _loadPersonData();
+    } else if (widget.linkToPersonId != null) {
+      _intermediatePersonId = widget.linkToPersonId;
     }
   }
 
@@ -127,13 +132,88 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
       // Automatically link to another person if requested (only on creation)
       if (widget.personId == null && widget.linkToPersonId != null) {
         final connectionsRepo = ref.read(personConnectionsRepositoryProvider);
-        await connectionsRepo.insertConnection(
-          PersonConnectionsCompanion.insert(
-            personId: widget.linkToPersonId!,
-            connectedPersonId: savedPersonId,
-            relationLabel: const Value('Connection'),
-          ),
-        );
+        final peopleRepo = ref.read(peopleRepositoryProvider);
+
+        if (_isWeak && _intermediatePersonId != null) {
+          // WEAK connection logic:
+          // 1. Me <-> New (Weak)
+          // 2. Intermediate <-> New (Strong)
+          // 3. Auto-labeling
+
+          final intermediate = await peopleRepo.getPerson(_intermediatePersonId!);
+          final weakLabel = "${intermediate.name}'s $relationText";
+
+          // Save forward: Profile -> New (Weak)
+          await connectionsRepo.insertConnection(
+            PersonConnectionsCompanion.insert(
+              personId: widget.linkToPersonId!,
+              connectedPersonId: savedPersonId,
+              relationLabel: Value(weakLabel),
+              isWeak: const Value(true),
+            ),
+          );
+          // Save reverse: New -> Profile (Weak)
+          await connectionsRepo.insertConnection(
+            PersonConnectionsCompanion.insert(
+              personId: savedPersonId,
+              connectedPersonId: widget.linkToPersonId!,
+              relationLabel: Value(
+                RelationHelper.getInverseRelation(
+                  relationText.isEmpty ? 'Friend' : relationText,
+                ),
+              ),
+              isWeak: const Value(true),
+            ),
+          );
+
+          // Save strong connection: Intermediate -> New
+          await connectionsRepo.insertConnection(
+            PersonConnectionsCompanion.insert(
+              personId: _intermediatePersonId!,
+              connectedPersonId: savedPersonId,
+              relationLabel: Value(relationText.isEmpty ? 'Connection' : relationText),
+              isWeak: const Value(false),
+            ),
+          );
+          // Reverse: New -> Intermediate
+          final inv = RelationHelper.getInverseRelation(
+            relationText.isEmpty ? 'Friend' : relationText,
+          );
+          await connectionsRepo.insertConnection(
+            PersonConnectionsCompanion.insert(
+              personId: savedPersonId,
+              connectedPersonId: _intermediatePersonId!,
+              relationLabel: Value(
+                inv.isNotEmpty ? inv[0].toUpperCase() + inv.substring(1) : inv,
+              ),
+              isWeak: const Value(false),
+            ),
+          );
+        } else {
+          // Direct (Strong) connection
+          await connectionsRepo.insertConnection(
+            PersonConnectionsCompanion.insert(
+              personId: widget.linkToPersonId!,
+              connectedPersonId: savedPersonId,
+              relationLabel: Value(relationText.isEmpty ? 'Connection' : relationText),
+              isWeak: const Value(false),
+            ),
+          );
+          // Reverse
+          final inv = RelationHelper.getInverseRelation(
+            relationText.isEmpty ? 'Friend' : relationText,
+          );
+          await connectionsRepo.insertConnection(
+            PersonConnectionsCompanion.insert(
+              personId: savedPersonId,
+              connectedPersonId: widget.linkToPersonId!,
+              relationLabel: Value(
+                inv.isNotEmpty ? inv[0].toUpperCase() + inv.substring(1) : inv,
+              ),
+              isWeak: const Value(false),
+            ),
+          );
+        }
       }
 
       if (mounted) {
@@ -220,6 +300,68 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
                         hintText: 'e.g. Brother, Sister, Manager',
                         prefixIcon: Icon(LucideIcons.heartHandshake),
                       ),
+                    ),
+                  ],
+                  if (widget.linkToPersonId != null && !isEdit) ...[
+                    const Divider(height: 32),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(LucideIcons.link2Off, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Weak Connection',
+                              style: tt.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(),
+                            Switch(
+                              value: _isWeak,
+                              onChanged: (v) => setState(() => _isWeak = v),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Weak connections are indirect relationships (e.g., John\'s Wife). They appear smaller and orbit an intermediary person in the graph.',
+                          style: tt.bodySmall?.copyWith(
+                            color: cs.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        if (_isWeak) ...[
+                          const SizedBox(height: 16),
+                          ref.watch(allPeopleProvider).when(
+                                data: (people) {
+                                  final others = people
+                                      .where((p) => p.id != widget.personId)
+                                      .toList();
+                                  return DropdownButtonFormField<int>(
+                                    initialValue: _intermediatePersonId,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Intermediate Person',
+                                      prefixIcon: Icon(LucideIcons.gitMerge),
+                                    ),
+                                    items: others.map((p) {
+                                      return DropdownMenuItem(
+                                        value: p.id,
+                                        child: Text(p.name),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _intermediatePersonId = val;
+                                      });
+                                    },
+                                  );
+                                },
+                                loading: () => const CircularProgressIndicator(),
+                                error: (_, _) => const SizedBox(),
+                              ),
+                        ],
+                      ],
                     ),
                   ],
                 ],

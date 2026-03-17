@@ -1,7 +1,11 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 
 part 'notification_service.g.dart';
 
@@ -18,6 +22,18 @@ class NotificationService {
 
   Future<void> initialize() async {
     if (_isInitialized) return;
+
+    tz.initializeTimeZones();
+    try {
+      final timeZone = await FlutterTimezone.getLocalTimezone();
+      // the type might be a string or object depending on version
+      final String timeZoneName = timeZone is String
+          ? timeZone
+          : (timeZone as dynamic).name;
+      tz.setLocalLocation(tz.getLocation(timeZoneName));
+    } catch (e) {
+      // Fallback
+    }
 
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -59,18 +75,22 @@ class NotificationService {
               >();
 
       await androidImplementation?.requestNotificationsPermission();
+      await androidImplementation?.requestExactAlarmsPermission();
     }
   }
 
-  Future<void> showNotification({
+  Future<void> scheduleDailyNotification({
     required int id,
     required String title,
     required String body,
+    required TimeOfDay time,
   }) async {
+    await cancelNotification(id);
+
     const androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'linksy_channel_id',
-      'Linksy Notifications',
-      channelDescription: 'Notifications for overdue bonds',
+      'linksy_daily_channel_id',
+      'Linksy Daily Reminders',
+      channelDescription: 'Daily notifications for your bonds',
       importance: Importance.max,
       priority: Priority.high,
       showWhen: true,
@@ -83,11 +103,34 @@ class NotificationService {
       iOS: iOSPlatformChannelSpecifics,
     );
 
-    await flutterLocalNotificationsPlugin.show(
+    await flutterLocalNotificationsPlugin.zonedSchedule(
       id: id,
       title: title,
       body: body,
+      scheduledDate: _nextInstanceOfTime(time),
       notificationDetails: platformChannelSpecifics,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.time,
     );
+  }
+
+  Future<void> cancelNotification(int id) async {
+    await flutterLocalNotificationsPlugin.cancel(id: id);
+  }
+
+  tz.TZDateTime _nextInstanceOfTime(TimeOfDay time) {
+    final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
+    tz.TZDateTime scheduledDate = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
+    return scheduledDate;
   }
 }

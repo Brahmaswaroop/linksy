@@ -4,6 +4,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/engine/health_score_engine.dart';
 import '../../core/engine/sorting_service.dart';
+import '../../core/database/repositories/person_connections_repository.dart';
+import '../../core/utils/relation_helper.dart';
 import 'widgets/person_card.dart';
 
 class PeopleScreen extends ConsumerStatefulWidget {
@@ -38,6 +40,9 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     final sortOrder = ref.watch(sortOrderProvider);
     final peopleAsync = ref.watch(sortedPeopleProvider);
     final engine = ref.watch(healthScoreEngineProvider);
+    final connectionsAsync = ref.watch(allPersonConnectionsProvider);
+    final allConnections = connectionsAsync.valueOrNull ?? [];
+
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
 
@@ -124,9 +129,45 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                 }
 
                 final filteredPeople = people.where((p) {
-                  final matchesSearch = p.name.toLowerCase().contains(
+                  bool matchesSearch = p.name.toLowerCase().contains(
                     _searchQuery,
                   );
+
+                  if (!matchesSearch && _searchQuery.isNotEmpty) {
+                    final pConns = allConnections.where(
+                      (c) => c.personId == p.id || c.connectedPersonId == p.id,
+                    );
+                    for (final conn in pConns) {
+                      final label = RelationHelper.getLabelForSubject(
+                        subjectId: p.id,
+                        connection: conn,
+                      ).toLowerCase();
+
+                      if (label.contains(_searchQuery)) {
+                        matchesSearch = true;
+                        break;
+                      }
+
+                      final otherId = conn.personId == p.id
+                          ? conn.connectedPersonId
+                          : conn.personId;
+                      // Fallback to checking the active people list, so we don't need a heavy async query per person
+                      try {
+                        final otherPerson = people.firstWhere(
+                          (op) => op.id == otherId,
+                        );
+                        if (otherPerson.name.toLowerCase().contains(
+                          _searchQuery,
+                        )) {
+                          matchesSearch = true;
+                          break;
+                        }
+                      } catch (_) {
+                        // Person not found in current list, ignore
+                      }
+                    }
+                  }
+
                   final matchesCategory =
                       _selectedCategory == 'All' ||
                       p.category == _selectedCategory;

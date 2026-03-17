@@ -5,8 +5,11 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/database/database.dart';
 import '../../../core/database/repositories/labels_repository.dart';
+import '../../../core/database/repositories/person_connections_repository.dart';
+import '../../../core/database/repositories/people_repository.dart';
 import '../../../core/engine/health_score_engine.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/relation_helper.dart';
 
 class PersonCard extends ConsumerWidget {
   final Person person;
@@ -182,6 +185,82 @@ class PersonCard extends ConsumerWidget {
                         error: (err, stack) => const SizedBox.shrink(),
                       ),
 
+                      // Connections Chips
+                      Consumer(
+                        builder: (context, ref, child) {
+                          final connectionsAsync = ref.watch(
+                            personConnectionsProvider(person.id),
+                          );
+                          return connectionsAsync.when(
+                            data: (connections) {
+                              if (connections.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: connections.map((conn) {
+                                    return Consumer(
+                                      builder: (context, ref, child) {
+                                        final repo = ref.read(
+                                          personConnectionsRepositoryProvider,
+                                        );
+                                        final otherId = repo.getOtherPersonId(
+                                          conn,
+                                          person.id,
+                                        );
+                                        final otherAsync = ref.watch(
+                                          personStreamProvider(otherId),
+                                        );
+                                        return otherAsync.when(
+                                          data: (other) {
+                                            return Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: cs
+                                                    .surfaceContainerHighest
+                                                    .withValues(alpha: 0.5),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color: cs.outlineVariant
+                                                      .withValues(alpha: 0.5),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                '${_capitalize(RelationHelper.getInverseRelation(conn.relationLabel))} of ${other.name}',
+                                                style: tt.labelSmall?.copyWith(
+                                                  color: cs.onSurface
+                                                      .withValues(alpha: 0.8),
+                                                  fontWeight: FontWeight.w500,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          loading: () =>
+                                              const SizedBox.shrink(),
+                                          error: (_, __) =>
+                                              const SizedBox.shrink(),
+                                        );
+                                      },
+                                    );
+                                  }).toList(),
+                                ),
+                              );
+                            },
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
+                          );
+                        },
+                      ),
+
                       // Dates
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -250,5 +329,10 @@ class PersonCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
   }
 }

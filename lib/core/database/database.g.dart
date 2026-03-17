@@ -1584,6 +1584,19 @@ class $PersonConnectionsTable extends PersonConnections
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _isWeakMeta = const VerificationMeta('isWeak');
+  @override
+  late final GeneratedColumn<bool> isWeak = GeneratedColumn<bool>(
+    'is_weak',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_weak" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1591,6 +1604,7 @@ class $PersonConnectionsTable extends PersonConnections
     connectedPersonId,
     relationLabel,
     createdAt,
+    isWeak,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1641,6 +1655,12 @@ class $PersonConnectionsTable extends PersonConnections
         createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
       );
     }
+    if (data.containsKey('is_weak')) {
+      context.handle(
+        _isWeakMeta,
+        isWeak.isAcceptableOrUnknown(data['is_weak']!, _isWeakMeta),
+      );
+    }
     return context;
   }
 
@@ -1670,6 +1690,10 @@ class $PersonConnectionsTable extends PersonConnections
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
       )!,
+      isWeak: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_weak'],
+      )!,
     );
   }
 
@@ -1686,12 +1710,16 @@ class PersonConnection extends DataClass
   final int connectedPersonId;
   final String relationLabel;
   final DateTime createdAt;
+
+  /// True = indirect / weak link (e.g. friend-of-a-friend)
+  final bool isWeak;
   const PersonConnection({
     required this.id,
     required this.personId,
     required this.connectedPersonId,
     required this.relationLabel,
     required this.createdAt,
+    required this.isWeak,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1701,6 +1729,7 @@ class PersonConnection extends DataClass
     map['connected_person_id'] = Variable<int>(connectedPersonId);
     map['relation_label'] = Variable<String>(relationLabel);
     map['created_at'] = Variable<DateTime>(createdAt);
+    map['is_weak'] = Variable<bool>(isWeak);
     return map;
   }
 
@@ -1711,6 +1740,7 @@ class PersonConnection extends DataClass
       connectedPersonId: Value(connectedPersonId),
       relationLabel: Value(relationLabel),
       createdAt: Value(createdAt),
+      isWeak: Value(isWeak),
     );
   }
 
@@ -1725,6 +1755,7 @@ class PersonConnection extends DataClass
       connectedPersonId: serializer.fromJson<int>(json['connectedPersonId']),
       relationLabel: serializer.fromJson<String>(json['relationLabel']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      isWeak: serializer.fromJson<bool>(json['isWeak']),
     );
   }
   @override
@@ -1736,6 +1767,7 @@ class PersonConnection extends DataClass
       'connectedPersonId': serializer.toJson<int>(connectedPersonId),
       'relationLabel': serializer.toJson<String>(relationLabel),
       'createdAt': serializer.toJson<DateTime>(createdAt),
+      'isWeak': serializer.toJson<bool>(isWeak),
     };
   }
 
@@ -1745,12 +1777,14 @@ class PersonConnection extends DataClass
     int? connectedPersonId,
     String? relationLabel,
     DateTime? createdAt,
+    bool? isWeak,
   }) => PersonConnection(
     id: id ?? this.id,
     personId: personId ?? this.personId,
     connectedPersonId: connectedPersonId ?? this.connectedPersonId,
     relationLabel: relationLabel ?? this.relationLabel,
     createdAt: createdAt ?? this.createdAt,
+    isWeak: isWeak ?? this.isWeak,
   );
   PersonConnection copyWithCompanion(PersonConnectionsCompanion data) {
     return PersonConnection(
@@ -1763,6 +1797,7 @@ class PersonConnection extends DataClass
           ? data.relationLabel.value
           : this.relationLabel,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      isWeak: data.isWeak.present ? data.isWeak.value : this.isWeak,
     );
   }
 
@@ -1773,14 +1808,21 @@ class PersonConnection extends DataClass
           ..write('personId: $personId, ')
           ..write('connectedPersonId: $connectedPersonId, ')
           ..write('relationLabel: $relationLabel, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('isWeak: $isWeak')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, personId, connectedPersonId, relationLabel, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    personId,
+    connectedPersonId,
+    relationLabel,
+    createdAt,
+    isWeak,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1789,7 +1831,8 @@ class PersonConnection extends DataClass
           other.personId == this.personId &&
           other.connectedPersonId == this.connectedPersonId &&
           other.relationLabel == this.relationLabel &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.isWeak == this.isWeak);
 }
 
 class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
@@ -1798,12 +1841,14 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
   final Value<int> connectedPersonId;
   final Value<String> relationLabel;
   final Value<DateTime> createdAt;
+  final Value<bool> isWeak;
   const PersonConnectionsCompanion({
     this.id = const Value.absent(),
     this.personId = const Value.absent(),
     this.connectedPersonId = const Value.absent(),
     this.relationLabel = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.isWeak = const Value.absent(),
   });
   PersonConnectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -1811,6 +1856,7 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
     required int connectedPersonId,
     this.relationLabel = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.isWeak = const Value.absent(),
   }) : personId = Value(personId),
        connectedPersonId = Value(connectedPersonId);
   static Insertable<PersonConnection> custom({
@@ -1819,6 +1865,7 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
     Expression<int>? connectedPersonId,
     Expression<String>? relationLabel,
     Expression<DateTime>? createdAt,
+    Expression<bool>? isWeak,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1826,6 +1873,7 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
       if (connectedPersonId != null) 'connected_person_id': connectedPersonId,
       if (relationLabel != null) 'relation_label': relationLabel,
       if (createdAt != null) 'created_at': createdAt,
+      if (isWeak != null) 'is_weak': isWeak,
     });
   }
 
@@ -1835,6 +1883,7 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
     Value<int>? connectedPersonId,
     Value<String>? relationLabel,
     Value<DateTime>? createdAt,
+    Value<bool>? isWeak,
   }) {
     return PersonConnectionsCompanion(
       id: id ?? this.id,
@@ -1842,6 +1891,7 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
       connectedPersonId: connectedPersonId ?? this.connectedPersonId,
       relationLabel: relationLabel ?? this.relationLabel,
       createdAt: createdAt ?? this.createdAt,
+      isWeak: isWeak ?? this.isWeak,
     );
   }
 
@@ -1863,6 +1913,9 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
+    if (isWeak.present) {
+      map['is_weak'] = Variable<bool>(isWeak.value);
+    }
     return map;
   }
 
@@ -1873,7 +1926,8 @@ class PersonConnectionsCompanion extends UpdateCompanion<PersonConnection> {
           ..write('personId: $personId, ')
           ..write('connectedPersonId: $connectedPersonId, ')
           ..write('relationLabel: $relationLabel, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('isWeak: $isWeak')
           ..write(')'))
         .toString();
   }
@@ -3328,6 +3382,7 @@ typedef $$PersonConnectionsTableCreateCompanionBuilder =
       required int connectedPersonId,
       Value<String> relationLabel,
       Value<DateTime> createdAt,
+      Value<bool> isWeak,
     });
 typedef $$PersonConnectionsTableUpdateCompanionBuilder =
     PersonConnectionsCompanion Function({
@@ -3336,6 +3391,7 @@ typedef $$PersonConnectionsTableUpdateCompanionBuilder =
       Value<int> connectedPersonId,
       Value<String> relationLabel,
       Value<DateTime> createdAt,
+      Value<bool> isWeak,
     });
 
 final class $$PersonConnectionsTableReferences
@@ -3416,6 +3472,11 @@ class $$PersonConnectionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get isWeak => $composableBuilder(
+    column: $table.isWeak,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$PeopleTableFilterComposer get personId {
     final $$PeopleTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -3487,6 +3548,11 @@ class $$PersonConnectionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isWeak => $composableBuilder(
+    column: $table.isWeak,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$PeopleTableOrderingComposer get personId {
     final $$PeopleTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -3553,6 +3619,9 @@ class $$PersonConnectionsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isWeak =>
+      $composableBuilder(column: $table.isWeak, builder: (column) => column);
 
   $$PeopleTableAnnotationComposer get personId {
     final $$PeopleTableAnnotationComposer composer = $composerBuilder(
@@ -3639,12 +3708,14 @@ class $$PersonConnectionsTableTableManager
                 Value<int> connectedPersonId = const Value.absent(),
                 Value<String> relationLabel = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<bool> isWeak = const Value.absent(),
               }) => PersonConnectionsCompanion(
                 id: id,
                 personId: personId,
                 connectedPersonId: connectedPersonId,
                 relationLabel: relationLabel,
                 createdAt: createdAt,
+                isWeak: isWeak,
               ),
           createCompanionCallback:
               ({
@@ -3653,12 +3724,14 @@ class $$PersonConnectionsTableTableManager
                 required int connectedPersonId,
                 Value<String> relationLabel = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
+                Value<bool> isWeak = const Value.absent(),
               }) => PersonConnectionsCompanion.insert(
                 id: id,
                 personId: personId,
                 connectedPersonId: connectedPersonId,
                 relationLabel: relationLabel,
                 createdAt: createdAt,
+                isWeak: isWeak,
               ),
           withReferenceMapper: (p0) => p0
               .map(

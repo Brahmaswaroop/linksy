@@ -16,4 +16,8 @@ class PersonConnections extends Table {
       text().withDefault(const Constant('Connection'))();
 
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// True = indirect / weak link (e.g. friend-of-a-friend)
+  BoolColumn get isWeak =>
+      boolean().withDefault(const Constant(false))();
 }

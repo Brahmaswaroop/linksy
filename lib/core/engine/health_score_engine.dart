@@ -35,12 +35,20 @@ class HealthScoreEngine {
     required double? averageGapDays,
     required DateTime createdAt,
   }) {
-    // Use lastInteractionDate if available, otherwise fall back to createdAt
     final baseDate = lastInteractionDate ?? createdAt;
 
+    // Strip time components to use calendar days
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
     final nextDueDate = baseDate.add(Duration(days: targetFrequencyDays));
-    final daysOverdue = now.difference(nextDueDate).inDays;
+    final nextDueDateCalendar = DateTime(
+      nextDueDate.year,
+      nextDueDate.month,
+      nextDueDate.day,
+    );
+
+    final daysOverdue = today.difference(nextDueDateCalendar).inDays;
     // daysOverdue > 0 → overdue by that many days
     // daysOverdue == 0 → due today
     // daysOverdue < 0 → due in abs(daysOverdue) days

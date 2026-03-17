@@ -298,7 +298,7 @@ class PersonDetailScreen extends ConsumerWidget {
   }
 }
 
-// ── Connections Section ───────────────────────────────────────────────────
+// ── Connections Section (Linked Carousel) ───────────────────────────────────
 
 class _ConnectionsSection extends ConsumerWidget {
   final int personId;
@@ -310,133 +310,319 @@ class _ConnectionsSection extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
 
-    return Card(
-      elevation: 0,
-      color: cs.surfaceContainerLowest,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outline.withValues(alpha: 0.1)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(LucideIcons.users, size: 18, color: cs.primary),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Connections',
-                      style: tt.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) {
-                        return AddConnectionSheet(sourcePersonId: personId);
-                      },
-                    );
-                  },
-                  icon: const Icon(LucideIcons.plus, size: 16),
-                  label: const Text('Add'),
+                Icon(LucideIcons.gitMerge, size: 18, color: cs.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Connected To',
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            connectionsAsync.when(
-              data: (connections) {
-                if (connections.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'No connections yet.',
-                      style: tt.bodySmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: connections.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final conn = connections[index];
-                    final repo = ref.read(personConnectionsRepositoryProvider);
-                    final otherPersonId = repo.getOtherPersonId(conn, personId);
-
-                    return Consumer(
-                      builder: (context, ref, child) {
-                        final otherPersonAsync = ref.watch(
-                          personStreamProvider(otherPersonId),
-                        );
-                        return otherPersonAsync.when(
-                          data: (other) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: avatarColorFromName(other.name),
-                              child: Text(
-                                other.name[0].toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              other.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              conn.relationLabel,
-                              style: TextStyle(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 12,
-                              ),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                LucideIcons.arrowRight,
-                                size: 16,
-                              ),
-                              onPressed: () =>
-                                  context.go('/people/${other.id}'),
-                            ),
-                          ),
-                          loading: () =>
-                              const ListTile(title: Text('Loading...')),
-                          error: (err, stack) =>
-                              const ListTile(title: Text('Error')),
-                        );
-                      },
-                    );
+            TextButton.icon(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) {
+                    return AddConnectionSheet(sourcePersonId: personId);
                   },
                 );
               },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, trace) => Text('Error: $e'),
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: const Text('Add'),
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 8),
+        connectionsAsync.when(
+          data: (connections) {
+            if (connections.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  'No connections yet.',
+                  style: tt.bodySmall?.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              );
+            }
+            final strong = connections.where((c) => !c.isWeak).toList();
+            final weak = connections.where((c) => c.isWeak).toList();
+            final combinedCount =
+                strong.length + (weak.isNotEmpty && strong.isNotEmpty ? 1 : 0) + weak.length;
+
+            return SizedBox(
+              height: 110,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 0),
+                itemCount: combinedCount,
+                separatorBuilder: (context, index) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  // Determine if this index is the divider
+                  if (strong.isNotEmpty && weak.isNotEmpty && index == strong.length) {
+                    return Center(
+                      child: Container(
+                        width: 1,
+                        height: 60,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        color: cs.outlineVariant.withValues(alpha: 0.5),
+                      ),
+                    );
+                  }
+
+                  // Determine which connection to show
+                  final isInWeakSection = strong.isNotEmpty && weak.isNotEmpty
+                      ? index > strong.length
+                      : index >= strong.length;
+                  
+                  final conn = isInWeakSection
+                      ? weak[index - (strong.isNotEmpty && weak.isNotEmpty ? strong.length + 1 : strong.length)]
+                      : strong[index];
+
+                  final repo = ref.read(personConnectionsRepositoryProvider);
+                  final otherPersonId = repo.getOtherPersonId(conn, personId);
+
+                  return Consumer(
+                    builder: (context, ref, child) {
+                      final otherPersonAsync = ref.watch(
+                        personStreamProvider(otherPersonId),
+                      );
+                      return otherPersonAsync.when(
+                        data: (other) {
+                          final isWeak = conn.isWeak;
+                          return GestureDetector(
+                            onTap: () => context.push('/people/${other.id}'),
+                            onLongPress: () {
+                              final controller = TextEditingController(
+                                text: conn.relationLabel,
+                              );
+                              bool weakFlag = conn.isWeak;
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => StatefulBuilder(
+                                  builder: (ctx, setDlgState) => AlertDialog(
+                                    title: const Text('Edit Connection'),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Connected to ${other.name}',
+                                        ),
+                                        const SizedBox(height: 16),
+                                        TextField(
+                                          controller: controller,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Relation Label',
+                                          ),
+                                          autofocus: true,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        SwitchListTile(
+                                          value: weakFlag,
+                                          onChanged: (v) => setDlgState(
+                                            () => weakFlag = v,
+                                          ),
+                                          title: const Text(
+                                            'Weak connection',
+                                          ),
+                                          subtitle: const Text(
+                                            'Indirect / friend-of-a-friend',
+                                          ),
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                        ),
+                                      ],
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () async {
+                                          final repository = ref.read(
+                                            personConnectionsRepositoryProvider,
+                                          );
+                                          await repository
+                                              .deleteConnection(conn.id);
+                                          if (ctx.mounted) {
+                                            Navigator.pop(ctx);
+                                          }
+                                        },
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.red,
+                                        ),
+                                        child: const Text('Delete'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () async {
+                                          final newLabel =
+                                              controller.text.trim();
+                                          final repository = ref.read(
+                                            personConnectionsRepositoryProvider,
+                                          );
+                                          if (newLabel.isNotEmpty) {
+                                            await repository.updateConnection(
+                                              conn.copyWith(
+                                                relationLabel: newLabel,
+                                                isWeak: weakFlag,
+                                              ),
+                                            );
+                                          }
+                                          if (ctx.mounted) {
+                                            Navigator.pop(ctx);
+                                          }
+                                        },
+                                        child: const Text('Save'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: 120,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isWeak
+                                    ? cs.surfaceContainerHighest.withValues(
+                                        alpha: 0.2,
+                                      )
+                                    : cs.surfaceContainerHighest.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                borderRadius: BorderRadius.circular(16),
+                                border: isWeak
+                                    ? Border.all(
+                                        color: cs.outlineVariant.withValues(
+                                          alpha: 0.4,
+                                        ),
+                                        width: 1.0,
+                                        strokeAlign:
+                                            BorderSide.strokeAlignInside,
+                                      )
+                                    : Border.all(
+                                        color: cs.outlineVariant.withValues(
+                                          alpha: 0.3,
+                                        ),
+                                      ),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 20,
+                                        backgroundColor: avatarColorFromName(
+                                          other.name,
+                                        ).withValues(
+                                          alpha: isWeak ? 0.45 : 1.0,
+                                        ),
+                                        child: Text(
+                                          other.name[0].toUpperCase(),
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: isWeak ? 0.7 : 1.0,
+                                            ),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      if (isWeak)
+                                        Positioned(
+                                          right: -4,
+                                          bottom: -4,
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: cs.surface,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            padding: const EdgeInsets.all(2),
+                                            child: Icon(
+                                              LucideIcons.link2Off,
+                                              size: 10,
+                                              color: cs.outline,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    other.name,
+                                    style: tt.labelMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: cs.onSurface.withValues(
+                                        alpha: isWeak ? 0.6 : 1.0,
+                                      ),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    conn.relationLabel,
+                                    style: tt.labelSmall?.copyWith(
+                                      color: isWeak ? cs.outline : cs.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        loading: () => Container(
+                          width: 120,
+                          color: cs.surfaceContainerHighest.withValues(
+                            alpha: 0.4,
+                          ),
+                        ),
+                        error: (err, stack) => const SizedBox(
+                          width: 120,
+                          child: Center(child: Text('Error')),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            );
+          },
+          loading: () => const SizedBox(
+            height: 110,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, trace) => Text('Error: $e'),
+        ),
+      ],
     );
   }
 }
@@ -532,6 +718,17 @@ class _HealthStatsCard extends StatelessWidget {
             label: 'Last Contact',
             value: lastContactStr,
             valueColor: score < 30 ? const Color(0xFFF44336) : null,
+          ),
+          const SizedBox(height: 8),
+          _StatRow(
+            icon: LucideIcons.calendarClock,
+            label: status.daysOverdue > 0 ? 'Overdue By' : 'Due In',
+            value: status.daysOverdue == 0
+                ? 'Today'
+                : status.daysOverdue > 0
+                ? '${status.daysOverdue} days'
+                : '${status.daysOverdue.abs()} days',
+            valueColor: status.daysOverdue > 0 ? const Color(0xFFF44336) : null,
           ),
         ],
       ),

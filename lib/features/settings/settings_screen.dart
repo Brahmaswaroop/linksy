@@ -56,14 +56,44 @@ class SettingsScreen extends ConsumerWidget {
               final isRemindersEnabled = ref.watch(
                 dailyRemindersNotifierProvider,
               );
-              return SwitchListTile(
-                value: isRemindersEnabled,
-                onChanged: (val) {
-                  ref.read(dailyRemindersNotifierProvider.notifier).toggle();
-                },
-                secondary: const Icon(LucideIcons.bell),
-                title: const Text('Daily Reminders'),
-                subtitle: const Text('Get notified about who to contact today'),
+              final notificationTime = ref.watch(
+                notificationTimeNotifierProvider,
+              );
+
+              return Column(
+                children: [
+                  SwitchListTile(
+                    value: isRemindersEnabled,
+                    onChanged: (val) {
+                      ref
+                          .read(dailyRemindersNotifierProvider.notifier)
+                          .setEnabled(val);
+                    },
+                    secondary: const Icon(LucideIcons.bell),
+                    title: const Text('Daily Reminders'),
+                    subtitle: const Text(
+                      'Get notified about who to contact today',
+                    ),
+                  ),
+                  if (isRemindersEnabled)
+                    ListTile(
+                      leading: const Icon(LucideIcons.clock),
+                      title: const Text('Notification Time'),
+                      subtitle: Text(notificationTime.format(context)),
+                      trailing: const Icon(LucideIcons.chevronRight, size: 20),
+                      onTap: () async {
+                        final newTime = await showTimePicker(
+                          context: context,
+                          initialTime: notificationTime,
+                        );
+                        if (newTime != null) {
+                          ref
+                              .read(notificationTimeNotifierProvider.notifier)
+                              .setTime(newTime);
+                        }
+                      },
+                    ),
+                ],
               );
             },
           ),

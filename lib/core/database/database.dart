@@ -20,7 +20,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration {
@@ -42,6 +42,12 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(
             people,
             people.averageGapDays as GeneratedColumn<Object>,
+          );
+        }
+        if (from < 6) {
+          await m.addColumn(
+            personConnections,
+            personConnections.isWeak as GeneratedColumn<Object>,
           );
         }
       },

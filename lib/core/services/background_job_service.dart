@@ -46,7 +46,8 @@ void callbackDispatcher() {
           createdAt: person.createdAt,
         );
 
-        if (healthStatus.daysOverdue > 0) {
+        if (healthStatus.statusEmoji == '🔴' ||
+            healthStatus.daysOverdue >= -2) {
           overdueCount++;
         }
       }
@@ -57,17 +58,6 @@ void callbackDispatcher() {
       if (overdueCount > 0) {
         final notificationPlugin = NotificationService();
         await notificationPlugin.initialize();
-
-        final title = overdueCount == 1
-            ? '1 Connection Needs Attention'
-            : '$overdueCount Connections Need Attention';
-        final body = 'Check your Dashboard to see who you should reach out to!';
-
-        await notificationPlugin.showNotification(
-          id: 1, // Fixed ID so it updates the same notification slot
-          title: title,
-          body: body,
-        );
       }
 
       return Future.value(true);

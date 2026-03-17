@@ -57,6 +57,9 @@ class DashboardScreen extends ConsumerWidget {
               neutral++;
             } else {
               fading++;
+            }
+
+            if (status.statusEmoji == '🔴' || status.daysOverdue >= -2) {
               needsAttention.add({'person': person, 'status': status});
             }
           }
@@ -64,6 +67,9 @@ class DashboardScreen extends ConsumerWidget {
           needsAttention.sort((a, b) {
             final statusA = a['status'] as RelationshipTargetStatus;
             final statusB = b['status'] as RelationshipTargetStatus;
+            // Most overdue first; break ties by priority score
+            final cmp = statusB.daysOverdue.compareTo(statusA.daysOverdue);
+            if (cmp != 0) return cmp;
             return statusB.totalScoreWithPriority.compareTo(
               statusA.totalScoreWithPriority,
             );
@@ -460,17 +466,26 @@ class _AttentionCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 12),
                           Icon(
-                            LucideIcons.clock,
+                            LucideIcons.calendarClock,
                             size: 12,
-                            color: cs.onSurface.withValues(alpha: 0.4),
+                            color: status.daysOverdue > 0
+                                ? const Color(0xFFF44336)
+                                : cs.onSurface.withValues(alpha: 0.4),
                           ),
                           const SizedBox(width: 3),
                           Text(
-                            person.lastInteractionDate == null
-                                ? 'Never'
-                                : timeago.format(person.lastInteractionDate!),
+                            status.daysOverdue == 0
+                                ? 'Due Today'
+                                : status.daysOverdue > 0
+                                ? 'Overdue by ${status.daysOverdue} days'
+                                : 'Due in ${status.daysOverdue.abs()} days',
                             style: tt.bodySmall?.copyWith(
-                              color: cs.onSurface.withValues(alpha: 0.5),
+                              color: status.daysOverdue > 0
+                                  ? const Color(0xFFF44336)
+                                  : cs.onSurface.withValues(alpha: 0.5),
+                              fontWeight: status.daysOverdue > 0
+                                  ? FontWeight.w600
+                                  : null,
                             ),
                           ),
                         ],

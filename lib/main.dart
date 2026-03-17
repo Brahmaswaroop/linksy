@@ -12,16 +12,30 @@ import 'core/router/app_router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Set up notifications
+  final prefs = await SharedPreferences.getInstance();
+
+  // Set up notifications using the shared instance
   final notificationService = NotificationService();
   await notificationService.initialize();
   await notificationService.requestPermissions();
 
-  // Set up background recalculation
-  await BackgroundJobService.initialize();
-  BackgroundJobService.scheduleDailyHealthCheck();
+  // Re-schedule the daily notification on every app start if reminders are on.
+  // This ensures the alarm survives device reboots and reinstalls without the
+  // user needing to visit Settings.
+  final remindersEnabled = prefs.getBool('daily_reminders_enabled') ?? true;
+  if (remindersEnabled) {
+    final hour = prefs.getInt('notification_time_hour') ?? 10;
+    final minute = prefs.getInt('notification_time_minute') ?? 0;
+    await notificationService.scheduleDailyNotification(
+      id: 1,
+      title: 'Check your bonds!',
+      body: 'Take a look at your Dashboard to see who needs attention today.',
+      time: TimeOfDay(hour: hour, minute: minute),
+    );
+  }
 
-  final prefs = await SharedPreferences.getInstance();
+  // Set up background recalculation (Workmanager — used for future background DB tasks)
+  await BackgroundJobService.initialize();
 
   runApp(
     ProviderScope(

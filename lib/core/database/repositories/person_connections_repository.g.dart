@@ -171,5 +171,25 @@ class _PersonConnectionsProviderElement
   int get personId => (origin as PersonConnectionsProvider).personId;
 }
 
+String _$allPersonConnectionsHash() =>
+    r'3eb98a8ab780f96dc313151ba0a793546508b1cf';
+
+/// See also [allPersonConnections].
+@ProviderFor(allPersonConnections)
+final allPersonConnectionsProvider =
+    AutoDisposeStreamProvider<List<PersonConnection>>.internal(
+      allPersonConnections,
+      name: r'allPersonConnectionsProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$allPersonConnectionsHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AllPersonConnectionsRef =
+    AutoDisposeStreamProviderRef<List<PersonConnection>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

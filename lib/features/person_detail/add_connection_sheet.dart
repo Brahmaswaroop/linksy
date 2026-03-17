@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' hide Column;
 import '../../core/database/database.dart';
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/person_connections_repository.dart';
+import '../../core/utils/relation_helper.dart';
 import '../../core/theme/app_theme.dart';
 
 class AddConnectionSheet extends ConsumerStatefulWidget {
@@ -24,6 +25,7 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
 
   String _searchQuery = '';
   Person? _selectedPerson;
+  bool _autoAddReverse = true;
 
   @override
   void dispose() {
@@ -34,15 +36,37 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
 
   void _saveConnection() async {
     if (_selectedPerson == null) return;
-    final relationLabel = _relationController.text.trim();
+    String relationLabel = _relationController.text.trim();
     if (relationLabel.isEmpty) return;
 
+    if (_autoAddReverse) {
+      relationLabel = RelationHelper.getStandardRelation(relationLabel);
+    }
+
     final repo = ref.read(personConnectionsRepositoryProvider);
+
+    // 1. Insert connection from Source -> Target
     await repo.insertConnection(
-      PersonConnectionsCompanion.insert(
-        personId: widget.sourcePersonId,
-        connectedPersonId: _selectedPerson!.id,
+      PersonConnectionsCompanion(
+        personId: Value(widget.sourcePersonId),
+        connectedPersonId: Value(_selectedPerson!.id),
         relationLabel: Value(relationLabel),
+      ),
+    );
+
+    // 2. Insert connection from Target -> Source
+    String reverseLabel = relationLabel;
+    if (_autoAddReverse) {
+      reverseLabel = RelationHelper.getInverseRelation(relationLabel);
+      reverseLabel = reverseLabel.isNotEmpty
+          ? reverseLabel[0].toUpperCase() + reverseLabel.substring(1)
+          : reverseLabel;
+    }
+    await repo.insertConnection(
+      PersonConnectionsCompanion(
+        personId: Value(_selectedPerson!.id),
+        connectedPersonId: Value(widget.sourcePersonId),
+        relationLabel: Value(reverseLabel),
       ),
     );
 
@@ -231,7 +255,22 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: _autoAddReverse,
+                onChanged: (val) {
+                  setState(() => _autoAddReverse = val ?? false);
+                },
+                title: const Text('Auto-infer reverse connection'),
+                subtitle: const Text(
+                  'Saves the logical inverse (e.g. Parent if Son) on the other profile. If unselected, saves the exact text entered.',
+                ),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+              ),
+              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               FilledButton(
                 onPressed: _saveConnection,
                 style: FilledButton.styleFrom(
