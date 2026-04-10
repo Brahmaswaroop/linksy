@@ -22,12 +22,7 @@ class DailyRemindersNotifier extends Notifier<bool> {
     final notificationService = ref.read(notificationServiceProvider);
 
     if (isEnabled) {
-      await notificationService.scheduleDailyNotification(
-        id: 1,
-        title: 'Check your bonds!',
-        body: 'Take a look at your Dashboard to see who needs attention today.',
-        time: time,
-      );
+      await notificationService.scheduleDailyDigest(time);
     } else {
       await notificationService.cancelNotification(1);
     }
@@ -59,12 +54,7 @@ class NotificationTimeNotifier extends Notifier<TimeOfDay> {
     final isEnabled = ref.read(dailyRemindersNotifierProvider);
     if (isEnabled) {
       final notificationService = ref.read(notificationServiceProvider);
-      await notificationService.scheduleDailyNotification(
-        id: 1,
-        title: 'Check your bonds!',
-        body: 'Take a look at your Dashboard to see who needs attention today.',
-        time: newTime,
-      );
+      await notificationService.scheduleDailyDigest(newTime);
     }
   }
 }

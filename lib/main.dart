@@ -14,32 +14,30 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
 
-  // Set up notifications using the shared instance
-  final notificationService = NotificationService();
-  await notificationService.initialize();
-  await notificationService.requestPermissions();
+  final container = ProviderContainer(
+    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+  );
+
+  // Initialize notifications through the provider to ensure the singleton is ready
+  final notificationService = container.read(notificationServiceProvider);
+  await notificationService.init();
 
   // Re-schedule the daily notification on every app start if reminders are on.
-  // This ensures the alarm survives device reboots and reinstalls without the
-  // user needing to visit Settings.
   final remindersEnabled = prefs.getBool('daily_reminders_enabled') ?? true;
   if (remindersEnabled) {
     final hour = prefs.getInt('notification_time_hour') ?? 10;
     final minute = prefs.getInt('notification_time_minute') ?? 0;
-    await notificationService.scheduleDailyNotification(
-      id: 1,
-      title: 'Check your bonds!',
-      body: 'Take a look at your Dashboard to see who needs attention today.',
-      time: TimeOfDay(hour: hour, minute: minute),
+    await notificationService.scheduleDailyDigest(
+      TimeOfDay(hour: hour, minute: minute),
     );
   }
 
-  // Set up background recalculation (Workmanager — used for future background DB tasks)
+  // Set up background recalculation
   await BackgroundJobService.initialize();
 
   runApp(
-    ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    UncontrolledProviderScope(
+      container: container,
       child: const MyBondsApp(),
     ),
   );

@@ -18,7 +18,7 @@ void callbackDispatcher() {
 
       // 3. Health Score iteration
       final engine = HealthScoreEngine();
-      int overdueCount = 0;
+      final List<Map<String, dynamic>> overduePeople = [];
 
       for (final person in people) {
         // Fetch last interaction
@@ -48,16 +48,31 @@ void callbackDispatcher() {
 
         if (healthStatus.statusEmoji == '🔴' ||
             healthStatus.daysOverdue >= -2) {
-          overdueCount++;
+          overduePeople.add({
+            'person': person,
+            'daysOverdue': healthStatus.daysOverdue,
+          });
         }
       }
 
       await db.close();
 
       // 4. Notify if anyone is overdue
-      if (overdueCount > 0) {
+      if (overduePeople.isNotEmpty) {
         final notificationPlugin = NotificationService();
-        await notificationPlugin.initialize();
+        await notificationPlugin.init();
+        
+        // Let's show a health alert for each overdue person
+        for (final item in overduePeople) {
+          final person = item['person'] as Person;
+          final daysOverdue = item['daysOverdue'] as int;
+          
+          await notificationPlugin.showHealthAlert(
+            personId: person.id,
+            personName: person.name,
+            daysOverdue: daysOverdue > 0 ? daysOverdue : 0,
+          );
+        }
       }
 
       return Future.value(true);
