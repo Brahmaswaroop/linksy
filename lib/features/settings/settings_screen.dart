@@ -148,6 +148,40 @@ class SettingsScreen extends ConsumerWidget {
                       }
                     },
                   ),
+                  const Divider(indent: 72),
+                  FutureBuilder<bool>(
+                    future: ref.read(notificationServiceProvider).isExactAlarmPermissionGranted(),
+                    builder: (context, snapshot) {
+                      final isGranted = snapshot.data ?? false;
+                      return ListTile(
+                        leading: const Icon(LucideIcons.timer),
+                        title: const Text('Exact Alarm Permission'),
+                        subtitle: const Text('Required for timely reminders'),
+                        trailing: Text(isGranted ? '✅' : '❌', style: const TextStyle(fontSize: 18)),
+                        onTap: () async {
+                          await ref.read(notificationServiceProvider).requestExactAlarmPermission();
+                        },
+                      );
+                    },
+                  ),
+                  FutureBuilder<bool>(
+                    future: ref.read(notificationServiceProvider).isBatteryOptimizationExempted(),
+                    builder: (context, snapshot) {
+                      final isExempted = snapshot.data ?? false;
+                      return ListTile(
+                        leading: const Icon(LucideIcons.battery),
+                        title: const Text('Battery Optimization'),
+                        subtitle: const Text('Exempt app to ensure alarms survive reboot'),
+                        trailing: Icon(
+                          isExempted ? LucideIcons.checkCircle : LucideIcons.alertCircle,
+                          color: isExempted ? Colors.green : Colors.orange,
+                        ),
+                        onTap: () async {
+                          await ref.read(notificationServiceProvider).requestBatteryOptimizationExemption();
+                        },
+                      );
+                    },
+                  ),
                 ],
               );
             },

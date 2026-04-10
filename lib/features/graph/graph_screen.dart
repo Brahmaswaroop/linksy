@@ -163,6 +163,7 @@ class _GraphScreenState extends ConsumerState<GraphScreen> {
   int _currentFocusId = 0;
   String _selectedCategory = 'All';
   final Set<String> _expandedCategories = {};
+  int _refreshKey = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -188,7 +189,16 @@ class _GraphScreenState extends ConsumerState<GraphScreen> {
           ],
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(graphDataProvider(_currentFocusId)),
+            tooltip: 'Reset View',
+            onPressed: () {
+              setState(() {
+                _currentFocusId = 0;
+                _selectedCategory = 'All';
+                _expandedCategories.clear();
+                _refreshKey++;
+              });
+              ref.invalidate(graphDataProvider(0));
+            },
           ),
         ],
       ),
@@ -196,6 +206,7 @@ class _GraphScreenState extends ConsumerState<GraphScreen> {
         children: [
           asyncData.when(
             data: (data) => _GraphLayoutEngine(
+              key: ValueKey(_refreshKey),
               data: data,
               focusId: _currentFocusId,
               expandedCategories: _expandedCategories,
@@ -238,6 +249,7 @@ class _GraphLayoutEngine extends StatefulWidget {
   final ValueChanged<String> onGroupTap;
 
   const _GraphLayoutEngine({
+    super.key,
     required this.data,
     required this.focusId,
     required this.expandedCategories,
@@ -387,13 +399,13 @@ class _GraphLayoutEngineState extends State<_GraphLayoutEngine> {
 
 // ─── Edge Widget ────────────────────────────────────────────────────────────
 //
-// The library places edge widgets at the midpoint of the two nodes on an
-// *unconstrained* canvas. We must explicitly give the widget a size or the
-// CustomPaint will default to Size.zero and be invisible.
+// The flutter_force_directed_graph library places the edge widget at the
+// midpoint between two nodes and *rotates* it by the edge angle.  Therefore
+// we must draw a **horizontal** line (left-center → right-center) and let the
+// library's canvas rotation handle the actual orientation.
 //
-// Size = (distance, distance) guarantees the bounding box is always big enough
-// for any angle. The line is drawn relative to the widget's own center,
-// which the library maps to the geometric midpoint of the edge.
+// Width  = distance (the Euclidean distance between the two nodes).
+// Height = a small constant so the label chip & hit area are reasonable.
 
 class _EdgeLine extends StatelessWidget {
   final bool isWeak;
@@ -405,10 +417,11 @@ class _EdgeLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final sz = distance.clamp(1.0, 2000.0);
+    final w = distance.clamp(1.0, 2000.0);
+    const h = 30.0; // thin vertical extent for label room
     return SizedBox(
-      width: sz,
-      height: sz,
+      width: w,
+      height: h,
       child: CustomPaint(
         painter: _EdgePainter(
           color: cs.outlineVariant.withValues(alpha: isWeak ? 0.35 : 0.7),
@@ -445,16 +458,20 @@ class _EdgePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
-    final end = size.bottomRight(Offset.zero);
+    // Horizontal line from left-center to right-center.
+    // The library rotates the whole widget to match node-to-node angle.
+    final y = size.height / 2;
+    final start = Offset(0, y);
+    final end = Offset(size.width, y);
 
     if (isDashed) {
-      _drawDashedLine(canvas, Offset.zero, end, paint);
+      _drawDashedLine(canvas, start, end, paint);
     } else {
-      canvas.drawLine(Offset.zero, end, paint);
+      canvas.drawLine(start, end, paint);
     }
 
     if (label != null && label!.isNotEmpty) {
-      final mid = Offset(size.width / 2, size.height / 2);
+      final mid = Offset(size.width / 2, y);
       final tp = TextPainter(
         text: TextSpan(
           text: label,
@@ -479,21 +496,19 @@ class _EdgePainter extends CustomPainter {
   void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
     const dashLen = 8.0;
     const gapLen = 5.0;
-    final dx = end.dx - start.dx;
-    final dy = end.dy - start.dy;
-    final len = (end - start).distance;
-    if (len == 0) return;
-    final ux = dx / len;
-    final uy = dy / len;
+    final totalLen = (end - start).distance;
+    if (totalLen == 0) return;
+    final dx = (end.dx - start.dx) / totalLen;
+    final dy = (end.dy - start.dy) / totalLen;
     double drawn = 0;
     bool drawing = true;
-    while (drawn < len) {
+    while (drawn < totalLen) {
       final seg = drawing ? dashLen : gapLen;
-      final next = (drawn + seg).clamp(0.0, len);
+      final next = (drawn + seg).clamp(0.0, totalLen);
       if (drawing) {
         canvas.drawLine(
-          Offset(start.dx + ux * drawn, start.dy + uy * drawn),
-          Offset(start.dx + ux * next, start.dy + uy * next),
+          Offset(start.dx + dx * drawn, start.dy + dy * drawn),
+          Offset(start.dx + dx * next, start.dy + dy * next),
           paint,
         );
       }
