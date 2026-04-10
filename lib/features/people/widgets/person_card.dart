@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/database/database.dart';
@@ -60,40 +61,67 @@ class PersonCard extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── 1) Photo / Avatar Avatar ────────
-                Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: avatarColorFromName(person.name),
-                      backgroundImage: person.avatarPath != null
-                          ? FileImage(File(person.avatarPath!))
-                          : null,
-                      child: person.avatarPath == null
-                          ? Text(
-                              person.name[0].toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 24,
+                (() {
+                  final isWeak = person.isWeak;
+                  return Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: avatarColorFromName(person.name).withValues(
+                          alpha: isWeak ? 0.6 : 1.0,
+                        ),
+                        backgroundImage: person.avatarPath != null
+                            ? FileImage(File(person.avatarPath!))
+                            : null,
+                        child: person.avatarPath == null
+                            ? Text(
+                                person.name[0].toUpperCase(),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(
+                                    alpha: isWeak ? 0.7 : 1.0,
+                                  ),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 24,
+                                ),
+                              )
+                            : null,
+                      ),
+                      if (isWeak)
+                        Positioned(
+                          top: -2,
+                          left: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: cs.surface,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: cs.outlineVariant.withValues(alpha: 0.5),
                               ),
-                            )
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 16,
-                        height: 16,
-                        decoration: BoxDecoration(
-                          color: hColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: cs.surface, width: 2.5),
+                            ),
+                            child: Icon(
+                              LucideIcons.link2Off,
+                              size: 12,
+                              color: cs.outline,
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: hColor,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: cs.surface, width: 2.5),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                })(),
                 const SizedBox(width: 16),
 
                 // ── 2) Info Stream ────────
@@ -234,11 +262,16 @@ class PersonCard extends ConsumerWidget {
                                                 ),
                                               ),
                                               child: Text(
-                                                '${_capitalize(RelationHelper.getInverseRelation(conn.relationLabel))} of ${other.name}',
+                                                conn.isWeak
+                                                    ? '${_capitalize(RelationHelper.getInverseRelation(conn.relationLabel))} of ${other.name}'
+                                                    : '${_capitalize(RelationHelper.getInverseRelation(conn.relationLabel))} of ${other.name}', // Keeping same for now but could differentiate
                                                 style: tt.labelSmall?.copyWith(
-                                                  color: cs.onSurface
-                                                      .withValues(alpha: 0.8),
-                                                  fontWeight: FontWeight.w500,
+                                                  color: conn.isWeak
+                                                      ? cs.primary
+                                                      : cs.onSurface.withValues(alpha: 0.8),
+                                                  fontWeight: conn.isWeak
+                                                      ? FontWeight.bold
+                                                      : FontWeight.w500,
                                                   fontSize: 10,
                                                 ),
                                               ),
@@ -246,7 +279,7 @@ class PersonCard extends ConsumerWidget {
                                           },
                                           loading: () =>
                                               const SizedBox.shrink(),
-                                          error: (_, __) =>
+                                          error: (_, _) =>
                                               const SizedBox.shrink(),
                                         );
                                       },
@@ -256,7 +289,7 @@ class PersonCard extends ConsumerWidget {
                               );
                             },
                             loading: () => const SizedBox.shrink(),
-                            error: (_, __) => const SizedBox.shrink(),
+                            error: (_, _) => const SizedBox.shrink(),
                           );
                         },
                       ),

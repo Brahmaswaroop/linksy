@@ -92,8 +92,9 @@ class PersonConnectionsRepository {
   Future<void> updateConnectionPerspective(
     int sourcePersonId,
     int targetPersonId,
-    String newLabel,
-  ) async {
+    String newLabel, {
+    bool isWeak = false,
+  }) async {
     // 1. Cleanly delete any existing logical connection forwards or backwards
     await (_db.delete(_db.personConnections)..where(
           (t) =>
@@ -112,6 +113,7 @@ class PersonConnectionsRepository {
             personId: sourcePersonId,
             connectedPersonId: targetPersonId,
             relationLabel: Value(newLabel),
+            isWeak: Value(isWeak),
           ),
         );
 
@@ -128,6 +130,7 @@ class PersonConnectionsRepository {
             personId: targetPersonId,
             connectedPersonId: sourcePersonId,
             relationLabel: Value(displayInverse),
+            isWeak: Value(isWeak),
           ),
         );
   }

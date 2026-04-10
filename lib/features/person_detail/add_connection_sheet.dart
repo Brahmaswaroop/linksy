@@ -26,6 +26,7 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
   String _searchQuery = '';
   Person? _selectedPerson;
   bool _autoAddReverse = true;
+  bool _isWeak = false;
 
   @override
   void dispose() {
@@ -51,6 +52,7 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
         personId: Value(widget.sourcePersonId),
         connectedPersonId: Value(_selectedPerson!.id),
         relationLabel: Value(relationLabel),
+        isWeak: Value(_isWeak),
       ),
     );
 
@@ -67,6 +69,7 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
         personId: Value(_selectedPerson!.id),
         connectedPersonId: Value(widget.sourcePersonId),
         relationLabel: Value(reverseLabel),
+        isWeak: Value(_isWeak),
       ),
     );
 
@@ -256,6 +259,23 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
                 ),
               ),
               const SizedBox(height: 16),
+              SwitchListTile(
+                value: _isWeak,
+                onChanged: (val) {
+                  setState(() => _isWeak = val);
+                },
+                title: const Text('Weak connection'),
+                subtitle: const Text(
+                  'Mark as an indirect relationship (e.g. friend-of-a-friend)',
+                ),
+                secondary: Icon(
+                  _isWeak ? LucideIcons.link2Off : LucideIcons.link2,
+                  color: _isWeak ? cs.primary : cs.outline,
+                ),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+              const SizedBox(height: 8),
               CheckboxListTile(
                 value: _autoAddReverse,
                 onChanged: (val) {
@@ -263,7 +283,7 @@ class _AddConnectionSheetState extends ConsumerState<AddConnectionSheet> {
                 },
                 title: const Text('Auto-infer reverse connection'),
                 subtitle: const Text(
-                  'Saves the logical inverse (e.g. Parent if Son) on the other profile. If unselected, saves the exact text entered.',
+                  'Saves the logical inverse (e.g. Parent if Son) on the other profile.',
                 ),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,

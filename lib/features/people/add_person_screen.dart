@@ -9,7 +9,6 @@ import '../../core/database/database.dart';
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/labels_repository.dart';
 import '../../core/database/repositories/person_connections_repository.dart';
-import '../../core/utils/relation_helper.dart';
 import '../../core/utils/frequency_formatter.dart';
 
 class AddPersonScreen extends ConsumerStatefulWidget {
@@ -23,14 +22,13 @@ class AddPersonScreen extends ConsumerStatefulWidget {
 }
 
 class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
-  final _formKey = GlobalKey<FormState>(); // Form states
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
-  late TextEditingController
-  _relationController; // Used as the specific relation label
+  late TextEditingController _relationController;
   final Set<int> _selectedLabelIds = {};
   int _targetFrequencyDays = 14;
   int _priorityLevel = 2; // 1 = Low, 2 = Medium, 3 = High
-  String _category = 'Friend'; // Default category
+  String _category = 'Friend';
 
   static const _categories = ['Friend', 'Family', 'Colleague', 'Other'];
 
@@ -59,6 +57,16 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
       final labelsRepo = ref.read(labelsRepositoryProvider);
       final labels = await labelsRepo.getLabelsForPerson(widget.personId!);
 
+      // Check if this person has any weak connections
+      final conns = await ref
+          .read(personConnectionsRepositoryProvider)
+          .watchConnectionsForPerson(widget.personId!)
+          .first;
+      final weakConn = conns.cast<PersonConnection?>().firstWhere(
+            (c) => c != null && c.isWeak,
+            orElse: () => null,
+          );
+
       if (mounted) {
         setState(() {
           _nameController.text = person.name;
@@ -66,8 +74,14 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
           _priorityLevel = person.priorityLevel;
           _targetFrequencyDays = person.targetFrequencyDays;
           _selectedLabelIds.addAll(labels.map((e) => e.id));
+          _isWeak = person.isWeak;
           if (_categories.contains(person.category)) {
             _category = person.category;
+          }
+          if (weakConn != null) {
+            _intermediatePersonId = weakConn.personId == widget.personId
+                ? weakConn.connectedPersonId
+                : weakConn.personId;
           }
         });
       }
@@ -97,10 +111,11 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
         await repository.updatePerson(
           currentPerson.copyWith(
             name: _nameController.text.trim(),
-            category: _category,
+            category: _isWeak ? 'Other' : _category,
             relation: Value(relationText.isEmpty ? null : relationText),
             priorityLevel: _priorityLevel,
             targetFrequencyDays: _targetFrequencyDays,
+            isWeak: _isWeak,
           ),
         );
         savedPersonId = widget.personId!;
@@ -108,12 +123,13 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
         savedPersonId = await repository.insertPerson(
           PeopleCompanion.insert(
             name: _nameController.text.trim(),
-            category: Value(_category),
+            category: Value(_isWeak ? 'Other' : _category),
             relation: relationText.isEmpty
                 ? const Value.absent()
                 : Value(relationText),
             priorityLevel: Value(_priorityLevel),
             targetFrequencyDays: Value(_targetFrequencyDays),
+            isWeak: Value(_isWeak),
           ),
         );
       }
@@ -129,90 +145,32 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
         }
       }
 
-      // Automatically link to another person if requested (only on creation)
-      if (widget.personId == null && widget.linkToPersonId != null) {
-        final connectionsRepo = ref.read(personConnectionsRepositoryProvider);
-        final peopleRepo = ref.read(peopleRepositoryProvider);
-
-        if (_isWeak && _intermediatePersonId != null) {
-          // WEAK connection logic:
-          // 1. Me <-> New (Weak)
-          // 2. Intermediate <-> New (Strong)
-          // 3. Auto-labeling
-
-          final intermediate = await peopleRepo.getPerson(_intermediatePersonId!);
-          final weakLabel = "${intermediate.name}'s $relationText";
-
-          // Save forward: Profile -> New (Weak)
-          await connectionsRepo.insertConnection(
-            PersonConnectionsCompanion.insert(
-              personId: widget.linkToPersonId!,
-              connectedPersonId: savedPersonId,
-              relationLabel: Value(weakLabel),
-              isWeak: const Value(true),
-            ),
-          );
-          // Save reverse: New -> Profile (Weak)
-          await connectionsRepo.insertConnection(
-            PersonConnectionsCompanion.insert(
-              personId: savedPersonId,
-              connectedPersonId: widget.linkToPersonId!,
-              relationLabel: Value(
-                RelationHelper.getInverseRelation(
-                  relationText.isEmpty ? 'Friend' : relationText,
-                ),
-              ),
-              isWeak: const Value(true),
-            ),
-          );
-
-          // Save strong connection: Intermediate -> New
-          await connectionsRepo.insertConnection(
-            PersonConnectionsCompanion.insert(
-              personId: _intermediatePersonId!,
-              connectedPersonId: savedPersonId,
-              relationLabel: Value(relationText.isEmpty ? 'Connection' : relationText),
-              isWeak: const Value(false),
-            ),
-          );
-          // Reverse: New -> Intermediate
-          final inv = RelationHelper.getInverseRelation(
-            relationText.isEmpty ? 'Friend' : relationText,
-          );
-          await connectionsRepo.insertConnection(
-            PersonConnectionsCompanion.insert(
-              personId: savedPersonId,
-              connectedPersonId: _intermediatePersonId!,
-              relationLabel: Value(
-                inv.isNotEmpty ? inv[0].toUpperCase() + inv.substring(1) : inv,
-              ),
-              isWeak: const Value(false),
-            ),
-          );
-        } else {
-          // Direct (Strong) connection
-          await connectionsRepo.insertConnection(
-            PersonConnectionsCompanion.insert(
-              personId: widget.linkToPersonId!,
-              connectedPersonId: savedPersonId,
-              relationLabel: Value(relationText.isEmpty ? 'Connection' : relationText),
-              isWeak: const Value(false),
-            ),
-          );
-          // Reverse
-          final inv = RelationHelper.getInverseRelation(
-            relationText.isEmpty ? 'Friend' : relationText,
-          );
-          await connectionsRepo.insertConnection(
-            PersonConnectionsCompanion.insert(
-              personId: savedPersonId,
-              connectedPersonId: widget.linkToPersonId!,
-              relationLabel: Value(
-                inv.isNotEmpty ? inv[0].toUpperCase() + inv.substring(1) : inv,
-              ),
-              isWeak: const Value(false),
-            ),
-          );
+      final isEdit = widget.personId != null;
+      final connectionsRepo = ref.read(personConnectionsRepositoryProvider);
+      if (_isWeak && _intermediatePersonId != null) {
+        // WEAK connection: Intermediate <-> New (isWeak = true)
+        await connectionsRepo.updateConnectionPerspective(
+          _intermediatePersonId!,
+          savedPersonId,
+          relationText.isEmpty ? 'Friend' : relationText,
+          isWeak: true,
+        );
+      } else if (widget.linkToPersonId != null && !_isWeak) {
+        // Normal (Strong) connection to the current profile
+        await connectionsRepo.updateConnectionPerspective(
+          widget.linkToPersonId!,
+          savedPersonId,
+          relationText.isEmpty ? 'Friend' : relationText,
+          isWeak: false,
+        );
+      } else if (isEdit && !_isWeak) {
+        // If it was weak but now is strong, we might want to clean up the weak connection.
+        // For simplicity, we search for any connection marked isWeak and delete it if we are now strong.
+        final conns = await connectionsRepo.watchConnectionsForPerson(savedPersonId).first;
+        for (final c in conns) {
+          if (c.isWeak) {
+            await connectionsRepo.deleteConnection(c.id);
+          }
         }
       }
 
@@ -264,6 +222,26 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
               title: 'Basic Info',
               child: Column(
                 children: [
+                   SwitchListTile(
+                    value: _isWeak,
+                    onChanged: (v) => setState(() => _isWeak = v),
+                    title: Text(
+                      'Weak Connection',
+                      style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      'Indirect links (e.g. John\'s Wife)',
+                      style: tt.bodySmall?.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    secondary: Icon(
+                      _isWeak ? LucideIcons.link2Off : LucideIcons.link2,
+                      color: _isWeak ? cs.primary : cs.outline,
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const Divider(height: 24),
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(
@@ -274,94 +252,79 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
                         ? 'Please enter a name'
                         : null,
                   ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: _category,
-                    icon: const Icon(LucideIcons.chevronDown),
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      prefixIcon: Icon(LucideIcons.users),
+                  if (!_isWeak) ...[
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      initialValue: _category,
+                      icon: const Icon(LucideIcons.chevronDown),
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        prefixIcon: Icon(LucideIcons.users),
+                      ),
+                      items: _categories.map((cat) {
+                        return DropdownMenuItem(value: cat, child: Text(cat));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _category = val);
+                        }
+                      },
                     ),
-                    items: _categories.map((cat) {
-                      return DropdownMenuItem(value: cat, child: Text(cat));
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _category = val);
-                      }
-                    },
-                  ),
-                  if (_category == 'Family' || _category == 'Other') ...[
+                    if (_category == 'Family' || _category == 'Other') ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _relationController,
+                        decoration: const InputDecoration(
+                          labelText: 'Specific Relation (Optional)',
+                          hintText: 'e.g. Brother, Sister, Manager',
+                          prefixIcon: Icon(LucideIcons.heartHandshake),
+                        ),
+                      ),
+                    ],
+                  ],
+                  if (_isWeak) ...[
+                    const SizedBox(height: 16),
+                    ref.watch(allPeopleProvider).when(
+                          data: (people) {
+                            final strongOthers = people
+                                .where((p) => p.id != (widget.personId ?? -1) && !p.isWeak)
+                                .toList();
+                            return DropdownButtonFormField<int>(
+                              initialValue: _intermediatePersonId,
+                              decoration: const InputDecoration(
+                                labelText: 'Intermediate Person',
+                                prefixIcon: Icon(LucideIcons.gitMerge),
+                              ),
+                              validator: (v) => _isWeak && v == null ? 'Selection required' : null,
+                              items: strongOthers.map((p) {
+                                return DropdownMenuItem(
+                                  value: p.id,
+                                  child: Text(p.name),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _intermediatePersonId = val;
+                                });
+                              },
+                            );
+                          },
+                          loading: () => const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          error: (_, _) => const SizedBox(),
+                        ),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _relationController,
                       decoration: const InputDecoration(
-                        labelText: 'Specific Relation (Optional)',
-                        hintText: 'e.g. Brother, Sister, Manager',
+                        labelText: 'Relation with Intermediate',
+                        hintText: 'e.g. Wife, Son, Friend',
                         prefixIcon: Icon(LucideIcons.heartHandshake),
                       ),
-                    ),
-                  ],
-                  if (widget.linkToPersonId != null && !isEdit) ...[
-                    const Divider(height: 32),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(LucideIcons.link2Off, size: 16),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Weak Connection',
-                              style: tt.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const Spacer(),
-                            Switch(
-                              value: _isWeak,
-                              onChanged: (v) => setState(() => _isWeak = v),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Weak connections are indirect relationships (e.g., John\'s Wife). They appear smaller and orbit an intermediary person in the graph.',
-                          style: tt.bodySmall?.copyWith(
-                            color: cs.onSurface.withValues(alpha: 0.6),
-                          ),
-                        ),
-                        if (_isWeak) ...[
-                          const SizedBox(height: 16),
-                          ref.watch(allPeopleProvider).when(
-                                data: (people) {
-                                  final others = people
-                                      .where((p) => p.id != widget.personId)
-                                      .toList();
-                                  return DropdownButtonFormField<int>(
-                                    initialValue: _intermediatePersonId,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Intermediate Person',
-                                      prefixIcon: Icon(LucideIcons.gitMerge),
-                                    ),
-                                    items: others.map((p) {
-                                      return DropdownMenuItem(
-                                        value: p.id,
-                                        child: Text(p.name),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      setState(() {
-                                        _intermediatePersonId = val;
-                                      });
-                                    },
-                                  );
-                                },
-                                loading: () => const CircularProgressIndicator(),
-                                error: (_, _) => const SizedBox(),
-                              ),
-                        ],
-                      ],
                     ),
                   ],
                 ],
@@ -553,8 +516,6 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
   }
 }
 
-// ── Section Card ───────────────────────────────────────────────────────────
-
 class _SectionCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -600,8 +561,6 @@ class _SectionCard extends StatelessWidget {
     );
   }
 }
-
-// ── Priority Chip ──────────────────────────────────────────────────────────
 
 class _PriorityChip extends StatelessWidget {
   final String label;

@@ -17,10 +17,10 @@ part 'database.g.dart';
   tables: [People, Labels, PersonLabels, Interactions, PersonConnections],
 )
 class AppDatabase extends _$AppDatabase {
-  AppDatabase() : super(_openConnection());
+  AppDatabase([QueryExecutor? e]) : super(e ?? _openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration {
@@ -50,6 +50,9 @@ class AppDatabase extends _$AppDatabase {
             personConnections.isWeak as GeneratedColumn<Object>,
           );
         }
+        if (from < 7) {
+          await m.addColumn(people, people.isWeak as GeneratedColumn<Object>);
+        }
       },
       beforeOpen: (details) async {
         // Essential for foreign keys to work
@@ -63,9 +66,6 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'linksy.sqlite'));
-
-    // SQLite configuration for Flutter apps
-
     final cachebase = (await getTemporaryDirectory()).path;
     sqlite3.tempDirectory = cachebase;
 

@@ -23,4 +23,6 @@ class People extends Table {
 
   /// E.g. 'Friend', 'Family', 'Colleague', 'Other'
   TextColumn get category => text().withDefault(const Constant('Other'))();
+
+  BoolColumn get isWeak => boolean().withDefault(const Constant(false))();
 }

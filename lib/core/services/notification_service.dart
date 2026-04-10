@@ -58,6 +58,36 @@ class NotificationService {
     );
 
     _isInitialized = true;
+    debugPrint('NotificationService: Initialized successfully');
+  }
+
+  Future<void> showImmediateNotification({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    debugPrint('NotificationService: Showing immediate notification: $title');
+    const androidPlatformChannelSpecifics = AndroidNotificationDetails(
+      'linksy_test_channel_id',
+      'Linksy Test Notifications',
+      channelDescription: 'Used for testing notification functionality',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const iOSPlatformChannelSpecifics = DarwinNotificationDetails();
+
+    const platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: platformChannelSpecifics,
+    );
   }
 
   Future<void> requestPermissions() async {
@@ -103,19 +133,41 @@ class NotificationService {
       iOS: iOSPlatformChannelSpecifics,
     );
 
-    await flutterLocalNotificationsPlugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: _nextInstanceOfTime(time),
-      notificationDetails: platformChannelSpecifics,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
+    debugPrint('NotificationService: Scheduling daily notification at ${time.hour}:${time.minute} for ID $id');
+    try {
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: _nextInstanceOfTime(time),
+        notificationDetails: platformChannelSpecifics,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (e) {
+      debugPrint('Failed to schedule exact alarm: $e. Falling back to inexact.');
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: _nextInstanceOfTime(time),
+        notificationDetails: platformChannelSpecifics,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    }
   }
 
   Future<void> cancelNotification(int id) async {
     await flutterLocalNotificationsPlugin.cancel(id: id);
+  }
+
+  Future<List<PendingNotificationRequest>> getPendingNotifications() async {
+    return await flutterLocalNotificationsPlugin.pendingNotificationRequests();
   }
 
   tz.TZDateTime _nextInstanceOfTime(TimeOfDay time) {
@@ -131,6 +183,7 @@ class NotificationService {
     if (scheduledDate.isBefore(now)) {
       scheduledDate = scheduledDate.add(const Duration(days: 1));
     }
+    debugPrint(scheduledDate.toString());
     return scheduledDate;
   }
 }

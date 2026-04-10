@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/theme/theme_provider.dart';
+import '../../core/services/notification_service.dart';
 import 'settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -93,6 +94,60 @@ class SettingsScreen extends ConsumerWidget {
                         }
                       },
                     ),
+                  const Divider(indent: 72),
+                  ListTile(
+                    leading: const Icon(LucideIcons.flaskConical),
+                    title: const Text('Test Notification'),
+                    subtitle: const Text('Send an immediate notification now'),
+                    onTap: () async {
+                      final service = ref.read(notificationServiceProvider);
+                      await service.showImmediateNotification(
+                        id: 99,
+                        title: 'Test Notification',
+                        body: 'If you see this, notifications are working!',
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Test notification sent!')),
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(LucideIcons.listChecks),
+                    title: const Text('Check Scheduled'),
+                    subtitle: const Text('Verify if daily reminders are queued'),
+                    onTap: () async {
+                      final service = ref.read(notificationServiceProvider);
+                      final pending = await service.getPendingNotifications();
+                      if (context.mounted) {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Scheduled Notifications'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (pending.isEmpty)
+                                  const Text('No notifications scheduled.')
+                                else
+                                  ...pending.map((p) => ListTile(
+                                    title: Text('ID: ${p.id}'),
+                                    subtitle: Text(p.title ?? 'No title'),
+                                  )),
+                              ],
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 ],
               );
             },

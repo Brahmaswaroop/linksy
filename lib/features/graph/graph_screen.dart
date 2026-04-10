@@ -1,7 +1,7 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_force_directed_graph/flutter_force_directed_graph.dart' as fdg;
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -13,8 +13,10 @@ class GraphNode {
   final int id;
   final String name;
   final bool isUser;
-  final String category; // 'Friend', 'Family', etc.
+  final String category;
   final bool isWeak;
+  final bool isGroup;
+  final int memberCount;
 
   GraphNode({
     required this.id,
@@ -22,15 +24,17 @@ class GraphNode {
     this.isUser = false,
     this.category = '',
     this.isWeak = false,
+    this.isGroup = false,
+    this.memberCount = 1,
   });
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is GraphNode && runtimeType == other.runtimeType && id == other.id;
+      other is GraphNode && runtimeType == other.runtimeType && id == other.id && isGroup == other.isGroup;
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode => Object.hash(id, isGroup);
 }
 
 class GraphEdge {
@@ -51,165 +55,95 @@ class GraphData {
   final List<GraphNode> nodes;
   final List<GraphEdge> edges;
   GraphData(this.nodes, this.edges);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GraphData &&
+          runtimeType == other.runtimeType &&
+          nodes.length == other.nodes.length &&
+          edges.length == other.edges.length;
+
+  @override
+  int get hashCode => Object.hash(nodes.length, edges.length);
 }
 
 // ── Provider ───────────────────────────────────────────────────────────
 
-final graphDataProvider = FutureProvider.family<GraphData, int>((
-  ref,
-  focusedPersonId,
-) async {
+final graphDataProvider = FutureProvider.family<GraphData, int>((ref, focusedPersonId) async {
   final db = ref.read(databaseProvider);
 
   final nodes = <GraphNode>[];
   final edges = <GraphEdge>[];
+  final Set<int> addedNodeIds = {};
+
+  void addNode(GraphNode node) {
+    if (node.isGroup || !addedNodeIds.contains(node.id)) {
+      nodes.add(node);
+      if (!node.isGroup) addedNodeIds.add(node.id);
+    }
+  }
+
+  final allPeople = await db.select(db.people).get();
+  final allConnections = await db.select(db.personConnections).get();
 
   if (focusedPersonId == 0) {
-    // ── "You" view ─────────────────────────────────────────────────────
-    nodes.add(GraphNode(id: 0, name: 'You', isUser: true));
+    // ── "You" View With Smart Grouping ──────────────────────────────────
+    addNode(GraphNode(id: 0, name: 'You', isUser: true));
 
-    final allPeople = await db.select(db.people).get();
-    final allConnections = await db.select(db.personConnections).get();
-
-    // Build a lookup: personId -> list of (connectedPersonId, isWeak)
-    // For each connection, determine which end is weak.
-    // A person is a weak node if ALL their connections to "you" are weak.
-    // We treat a connection as linking two people. If isWeak is true on
-    // a connection, we anchor the weak person to their strong via-person.
-
-    // Step 1: index all strong people ids (connected with at least one
-    //   non-weak connection). Everyone is strong unless only weakly linked.
-    final Set<int> allPersonIds = allPeople.map((p) => p.id).toSet();
-
-    // For each person – collect all their connections and find if they
-    // are exclusively weak-linked (no direct strong link to any strong node).
-    // For simplicity: a person is rendered as a WEAK node if every connection
-    // they participate in has isWeak == true.
-    final Map<int, bool> personIsWeak = {};
-    for (final p in allPeople) {
-      final relatedConns = allConnections.where(
-        (c) => c.personId == p.id || c.connectedPersonId == p.id,
-      );
-      if (relatedConns.isEmpty) {
-        personIsWeak[p.id] = false;
-      } else {
-        personIsWeak[p.id] = relatedConns.every((c) => c.isWeak);
+    final categoryMembers = <String, List<int>>{};
+    for (final person in allPeople) {
+      if (!person.isWeak) {
+        categoryMembers.putIfAbsent(person.category, () => []).add(person.id);
       }
     }
 
-    // Step 2: Add all people as nodes.
-    for (final person in allPeople) {
-      final weak = personIsWeak[person.id] ?? false;
-      nodes.add(
-        GraphNode(
-          id: person.id,
-          name: person.name,
-          category: person.category,
-          isWeak: weak,
-        ),
-      );
-    }
+    // Add individuals and groups
+    for (final entry in categoryMembers.entries) {
+      final category = entry.key;
+      final memberIds = entry.value;
 
-    // Step 3: Add edges.
-    // Strong people → link to "You".
-    // Weak people → link to their closest strong via-person.
-    final Set<int> edgesDone = {};
-
-    for (final person in allPeople) {
-      if (edgesDone.contains(person.id)) continue;
-      edgesDone.add(person.id);
-
-      final weak = personIsWeak[person.id] ?? false;
-      if (!weak) {
-        // Strong person: edge from You -> person
-        edges.add(
-          GraphEdge(0, person.id, relationLabel: person.category, isWeak: false),
-        );
+      if (memberIds.length > 8) {
+        addNode(GraphNode(
+          id: -category.hashCode,
+          name: category,
+          category: category,
+          isGroup: true,
+          memberCount: memberIds.length,
+        ));
+        edges.add(GraphEdge(0, -category.hashCode, relationLabel: category));
       } else {
-        // Weak person: find the first strong via-person in connections
-        final conns = allConnections.where(
-          (c) => c.personId == person.id || c.connectedPersonId == person.id,
-        );
-        int? viaId;
-        String label = person.category;
-        for (final c in conns) {
-          final otherId =
-              c.personId == person.id ? c.connectedPersonId : c.personId;
-          final otherIsWeak = personIsWeak[otherId] ?? true;
-          if (!otherIsWeak && allPersonIds.contains(otherId)) {
-            viaId = otherId;
-            label = c.relationLabel;
-            break;
-          }
+        for (final id in memberIds) {
+          final person = allPeople.firstWhere((p) => p.id == id);
+          addNode(GraphNode(id: person.id, name: person.name, category: person.category));
+          edges.add(GraphEdge(0, person.id, relationLabel: person.category));
         }
-        // Fall back to "You" if no strong via-person found
-        edges.add(
-          GraphEdge(
-            viaId ?? 0,
-            person.id,
-            relationLabel: label,
-            isWeak: true,
-          ),
-        );
       }
+    }
+
+    // Add weak connections linking to their intermediates
+    for (final person in allPeople.where((p) => p.isWeak)) {
+      final conns = allConnections.where((c) => c.personId == person.id || c.connectedPersonId == person.id);
+      final otherId = conns.isEmpty ? 0 : (conns.first.personId == person.id ? conns.first.connectedPersonId : conns.first.personId);
+      
+      addNode(GraphNode(id: person.id, name: person.name, category: person.category, isWeak: true));
+      edges.add(GraphEdge(otherId, person.id, relationLabel: conns.isEmpty ? '?' : conns.first.relationLabel, isWeak: true));
     }
   } else {
-    // ── Focused on a specific person ────────────────────────────────────
-    final person = await (db.select(
-      db.people,
-    )..where((tbl) => tbl.id.equals(focusedPersonId))).getSingleOrNull();
-    if (person != null) {
-      nodes.add(
-        GraphNode(id: person.id, name: person.name, category: person.category),
-      );
+    // ── Focused Person View ─────────────────────────────────────────────
+    final person = allPeople.firstWhere((p) => p.id == focusedPersonId, orElse: () => allPeople.first);
+    addNode(GraphNode(id: person.id, name: person.name, category: person.category));
+    addNode(GraphNode(id: 0, name: 'You', isUser: true));
+    edges.add(GraphEdge(0, focusedPersonId, relationLabel: person.category));
 
-      // Implicitly connected to "You"
-      nodes.add(GraphNode(id: 0, name: 'You', isUser: true));
-      edges.add(GraphEdge(0, focusedPersonId, relationLabel: person.category));
-
-      final connections1 = await (db.select(
-        db.personConnections,
-      )..where((tbl) => tbl.personId.equals(focusedPersonId))).get();
-      final connections2 = await (db.select(
-        db.personConnections,
-      )..where((tbl) => tbl.connectedPersonId.equals(focusedPersonId))).get();
-
-      final connectedIds = <int>{};
-      final edgeMap = <int, (String, bool)>{};
-
-      for (final c in connections1) {
-        connectedIds.add(c.connectedPersonId);
-        edgeMap[c.connectedPersonId] = (c.relationLabel, c.isWeak);
+    final connections = allConnections.where((c) => c.personId == focusedPersonId || c.connectedPersonId == focusedPersonId);
+    for (final c in connections) {
+      final otherId = c.personId == focusedPersonId ? c.connectedPersonId : c.personId;
+      final other = allPeople.where((p) => p.id == otherId).firstOrNull;
+      if (other != null) {
+        addNode(GraphNode(id: other.id, name: other.name, category: other.category, isWeak: c.isWeak));
+        edges.add(GraphEdge(focusedPersonId, other.id, relationLabel: c.relationLabel, isWeak: c.isWeak));
       }
-
-      for (final c in connections2) {
-        connectedIds.add(c.personId);
-        if (!edgeMap.containsKey(c.personId)) {
-          edgeMap[c.personId] = ('${c.relationLabel} (Theirs)', c.isWeak);
-        }
-      }
-
-      if (connectedIds.isNotEmpty) {
-        final connectedPeople = await (db.select(
-          db.people,
-        )..where((tbl) => tbl.id.isIn(connectedIds))).get();
-        for (final p in connectedPeople) {
-          final (label, weak) = edgeMap[p.id] ?? (p.category, false);
-          nodes.add(
-            GraphNode(
-              id: p.id,
-              name: p.name,
-              category: p.category,
-              isWeak: weak,
-            ),
-          );
-          edges.add(
-            GraphEdge(focusedPersonId, p.id, relationLabel: label, isWeak: weak),
-          );
-        }
-      }
-    } else {
-      nodes.add(GraphNode(id: 0, name: 'You', isUser: true));
     }
   }
 
@@ -228,283 +162,381 @@ class GraphScreen extends ConsumerStatefulWidget {
 class _GraphScreenState extends ConsumerState<GraphScreen> {
   int _currentFocusId = 0;
   String _selectedCategory = 'All';
-  static const _categories = ['All', 'Friend', 'Family', 'Colleague', 'Other'];
-
-  static const double kGraphCenterBound = 2000.0;
-  final TransformationController _transformController =
-      TransformationController();
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _centerView();
-    });
-  }
-
-  void _centerView() {
-    final size = MediaQuery.of(context).size;
-    _transformController.value = Matrix4.identity()
-      ..translateByDouble(
-        -(kGraphCenterBound / 2) + (size.width / 2),
-        -(kGraphCenterBound / 2) + (size.height / 2) - 100,
-        0.0,
-        1.0,
-      );
-  }
-
-  GraphData? _filteredGraphData(GraphData original) {
-    if (_selectedCategory == 'All') return original;
-
-    final matchingNodes = original.nodes
-        .where(
-          (n) =>
-              n.category == _selectedCategory ||
-              n.id == 0 ||
-              n.id == _currentFocusId,
-        )
-        .map((n) => n.id)
-        .toSet();
-
-    final filteredNodes = original.nodes
-        .where((n) => matchingNodes.contains(n.id))
-        .toList();
-
-    final filteredEdges = original.edges
-        .where(
-          (e) =>
-              matchingNodes.contains(e.sourceId) &&
-              matchingNodes.contains(e.targetId),
-        )
-        .toList();
-
-    return GraphData(filteredNodes, filteredEdges);
-  }
+  final Set<String> _expandedCategories = {};
 
   @override
   Widget build(BuildContext context) {
     final asyncData = ref.watch(graphDataProvider(_currentFocusId));
     final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
 
     return Scaffold(
+      backgroundColor: cs.surface,
       appBar: AppBar(
-        title: const Text('Network Graph'),
+        title: const Text('Network Map'),
         actions: [
           if (_currentFocusId != 0) ...[
             TextButton.icon(
               icon: const Icon(LucideIcons.user),
-              label: const Text('View Profile'),
+              label: const Text('Profile'),
               onPressed: () => context.push('/people/$_currentFocusId'),
             ),
-            TextButton.icon(
+            IconButton(
               icon: const Icon(Icons.my_location),
-              label: const Text('Back to Me'),
-              onPressed: () {
-                setState(() => _currentFocusId = 0);
-                _centerView();
-              },
+              onPressed: () => setState(() => _currentFocusId = 0),
+              tooltip: 'Center on Me',
             ),
           ],
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(graphDataProvider(_currentFocusId));
-            },
+            onPressed: () => ref.invalidate(graphDataProvider(_currentFocusId)),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: _categories.map((cat) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(cat),
-                    selected: _selectedCategory == cat,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() => _selectedCategory = cat);
-                      }
-                    },
-                  ),
-                );
-              }).toList(),
+      ),
+      body: Stack(
+        children: [
+          asyncData.when(
+            data: (data) => _GraphLayoutEngine(
+              data: data,
+              focusId: _currentFocusId,
+              expandedCategories: _expandedCategories,
+              onNodeTap: (id) => setState(() => _currentFocusId = id),
+              onGroupTap: (category) {
+                setState(() {
+                  if (_expandedCategories.contains(category)) {
+                    _expandedCategories.remove(category);
+                  } else {
+                    _expandedCategories.add(category);
+                  }
+                });
+              },
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, _) => Center(child: Text('Error loading graph: $err')),
+          ),
+          Positioned(
+            bottom: 24,
+            left: 16,
+            right: 16,
+            child: _CategoryFilter(
+              selected: _selectedCategory,
+              onChanged: (cat) => setState(() => _selectedCategory = cat),
             ),
           ),
-        ),
-      ),
-      body: asyncData.when(
-        data: (data) {
-          final filteredData = _filteredGraphData(data);
-
-          if (data.nodes.length <= 1 && _currentFocusId == 0) {
-            return Center(
-              child: Text(
-                'No connections yet.\nAdd people to see your network!',
-                textAlign: TextAlign.center,
-                style: tt.bodyLarge?.copyWith(
-                  color: cs.onSurface.withValues(alpha: 0.5),
-                ),
-              ),
-            );
-          }
-
-          if (filteredData == null || filteredData.nodes.isEmpty) {
-            return const Center(
-              child: Text('No connections matching this category.'),
-            );
-          }
-
-          return InteractiveViewer(
-            transformationController: _transformController,
-            boundaryMargin: const EdgeInsets.all(kGraphCenterBound),
-            minScale: 0.1,
-            maxScale: 4.0,
-            constrained: false,
-            child: SizedBox(
-              width: kGraphCenterBound,
-              height: kGraphCenterBound,
-              child: _GraphLayoutEngine(
-                data: filteredData,
-                focusId: _currentFocusId,
-                onNodeTap: (id) {
-                  setState(() {
-                    _currentFocusId = id;
-                  });
-                },
-              ),
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('Error: $err')),
+        ],
       ),
     );
   }
 }
 
-// ── Layout Engine ────────────────────────────────────────────────────────
+// ── Layout Engine (FDG) ────────────────────────────────────────────────
 
-class _GraphLayoutEngine extends StatelessWidget {
+class _GraphLayoutEngine extends StatefulWidget {
   final GraphData data;
   final int focusId;
+  final Set<String> expandedCategories;
   final ValueChanged<int> onNodeTap;
+  final ValueChanged<String> onGroupTap;
 
   const _GraphLayoutEngine({
     required this.data,
     required this.focusId,
+    required this.expandedCategories,
     required this.onNodeTap,
+    required this.onGroupTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    const centerOffset = Offset(
-      _GraphScreenState.kGraphCenterBound / 2,
-      _GraphScreenState.kGraphCenterBound / 2,
-    );
+  State<_GraphLayoutEngine> createState() => _GraphLayoutEngineState();
+}
 
-    final nodePositions = <int, Offset>{};
+class _GraphLayoutEngineState extends State<_GraphLayoutEngine> {
+  late final fdg.ForceDirectedGraphController<GraphNode> _controller;
+  final Map<String, GraphEdge> _edgeLookup = {};
+  final Map<int, fdg.Node<GraphNode>> _fdgNodeMap = {};
 
-    final focusNode = data.nodes.where((n) => n.id == focusId).firstOrNull;
-    if (focusNode != null) {
-      nodePositions[focusNode.id] = centerOffset;
+  @override
+  void initState() {
+    super.initState();
+    _controller = fdg.ForceDirectedGraphController<GraphNode>();
+    _initController();
+  }
 
-      // Separate strong and weak nodes
-      final strongNodes =
-          data.nodes.where((n) => n.id != focusId && !n.isWeak).toList();
-      final weakNodes =
-          data.nodes.where((n) => n.id != focusId && n.isWeak).toList();
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
-      // Place strong nodes in first ring
-      final strongCount = strongNodes.length;
-      final outerRadius = 200.0 + (strongCount * 6).clamp(0, 400).toDouble();
-      for (int i = 0; i < strongCount; i++) {
-        final angle = (i * 2 * math.pi) / strongCount;
-        final x = centerOffset.dx + outerRadius * math.cos(angle);
-        final y = centerOffset.dy + outerRadius * math.sin(angle);
-        nodePositions[strongNodes[i].id] = Offset(x, y);
-      }
+  @override
+  void didUpdateWidget(_GraphLayoutEngine oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data || oldWidget.expandedCategories != widget.expandedCategories) {
+      _initController();
+    }
+  }
 
-      // Place weak nodes orbiting their via-person (edge source)
-      // Group weak nodes by their parent
-      final Map<int, List<GraphNode>> weakByParent = {};
-      for (final wn in weakNodes) {
-        // Find the edge whose target is this weak node
-        final edge = data.edges
-            .where((e) => e.targetId == wn.id && e.isWeak)
-            .firstOrNull;
-        final parentId = edge?.sourceId ?? focusId;
-        weakByParent.putIfAbsent(parentId, () => []).add(wn);
-      }
+  void _initController() {
+    final visibleNodes = <GraphNode>[];
+    final visibleEdges = <GraphEdge>[];
+    final Map<String, int> groupNodeIds = {};
+    _edgeLookup.clear();
+    _fdgNodeMap.clear();
 
-      for (final entry in weakByParent.entries) {
-        final parentId = entry.key;
-        final children = entry.value;
-        final parentPos = nodePositions[parentId] ?? centerOffset;
-        const innerRadius = 90.0;
-        // Angle offset so children spread around the parent away from center
-        final baseAngle = math.atan2(
-          parentPos.dy - centerOffset.dy,
-          parentPos.dx - centerOffset.dx,
-        );
-        final spread = math.pi * 0.7;
-        for (int i = 0; i < children.length; i++) {
-          final t = children.length == 1
-              ? 0.0
-              : (i / (children.length - 1)) - 0.5;
-          final angle = baseAngle + t * spread;
-          final x = parentPos.dx + innerRadius * math.cos(angle);
-          final y = parentPos.dy + innerRadius * math.sin(angle);
-          nodePositions[children[i].id] = Offset(x, y);
+    // Grouping and Filtering logic logic
+    for (final node in widget.data.nodes) {
+      if (node.isGroup) {
+        groupNodeIds[node.category] = node.id;
+        if (!widget.expandedCategories.contains(node.category)) {
+          visibleNodes.add(node);
         }
-      }
-    } else {
-      for (final n in data.nodes) {
-        nodePositions[n.id] = centerOffset;
       }
     }
 
-    return Stack(
-      children: [
-        // Edges Layer
-        Positioned.fill(
-          child: RepaintBoundary(
-            child: CustomPaint(
-              painter: _GraphEdgesPainter(
-                data: data,
-                nodePositions: nodePositions,
-                context: context,
-              ),
-            ),
+    for (final node in widget.data.nodes) {
+      if (!node.isGroup && node.id != 0 && node.id != widget.focusId) {
+        if (!node.isWeak && groupNodeIds.containsKey(node.category) && !widget.expandedCategories.contains(node.category)) {
+          continue; // Hidden in group
+        }
+        visibleNodes.add(node);
+      } else if (node.id == 0 || node.id == widget.focusId) {
+        visibleNodes.add(node);
+      }
+    }
+
+    for (final edge in widget.data.edges) {
+      int s = edge.sourceId;
+      int t = edge.targetId;
+
+      // Handle group redirection
+      final sNode = widget.data.nodes.firstWhere((n) => n.id == s, orElse: () => GraphNode(id: -1, name: '?'));
+      final tNode = widget.data.nodes.firstWhere((n) => n.id == t, orElse: () => GraphNode(id: -1, name: '?'));
+
+      if (!sNode.isGroup && sNode.id != 0 && groupNodeIds.containsKey(sNode.category) && !widget.expandedCategories.contains(sNode.category)) {
+        s = groupNodeIds[sNode.category]!;
+      }
+      if (!tNode.isGroup && tNode.id != 0 && groupNodeIds.containsKey(tNode.category) && !widget.expandedCategories.contains(tNode.category)) {
+        t = groupNodeIds[tNode.category]!;
+      }
+
+      if (s != t) {
+        final mappedEdge = GraphEdge(s, t, relationLabel: edge.relationLabel, isWeak: edge.isWeak);
+        visibleEdges.add(mappedEdge);
+        _edgeLookup['$s-$t'] = mappedEdge;
+      }
+    }
+
+    final graph = fdg.ForceDirectedGraph<GraphNode>(
+      config: const fdg.GraphConfig(
+        repulsion: 300.0,
+        length: 140.0,
+        repulsionRange: 600.0,
+        damping: 0.5, // Faster settling
+      ),
+    );
+
+    for (final n in visibleNodes) {
+      final node = fdg.Node<GraphNode>(n);
+      graph.addNode(node);
+      _fdgNodeMap[n.id] = node;
+    }
+
+    for (final e in visibleEdges) {
+      final nodeA = _fdgNodeMap[e.sourceId];
+      final nodeB = _fdgNodeMap[e.targetId];
+      if (nodeA != null && nodeB != null) {
+        graph.addEdge(fdg.Edge(nodeA, nodeB));
+      }
+    }
+
+    _controller.graph = graph;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onScaleUpdate: (details) {
+        // Implement panning manually since scaling is handled by the widget
+        if (details.scale == 1.0) {
+          _controller.locateToPosition(
+            -details.focalPointDelta.dx / _controller.scale,
+            details.focalPointDelta.dy / _controller.scale,
+          );
+        }
+      },
+      child: fdg.ForceDirectedGraphWidget<GraphNode>(
+        controller: _controller,
+        nodesBuilder: (context, node) => _NodeWidget(
+          node: node,
+          isFocused: node.id == widget.focusId,
+          isExpanded: node.isGroup && widget.expandedCategories.contains(node.category),
+          onTap: node.isGroup ? () => widget.onGroupTap(node.category) : () => widget.onNodeTap(node.id),
+        ),
+        edgesBuilder: (context, a, b, distance) {
+          final edge = _edgeLookup['${a.id}-${b.id}'] ?? _edgeLookup['${b.id}-${a.id}'];
+          if (edge == null) return const SizedBox.shrink();
+          return _EdgeLine(
+            isWeak: edge.isWeak,
+            label: edge.relationLabel,
+            distance: distance,
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─── Edge Widget ────────────────────────────────────────────────────────────
+//
+// The library places edge widgets at the midpoint of the two nodes on an
+// *unconstrained* canvas. We must explicitly give the widget a size or the
+// CustomPaint will default to Size.zero and be invisible.
+//
+// Size = (distance, distance) guarantees the bounding box is always big enough
+// for any angle. The line is drawn relative to the widget's own center,
+// which the library maps to the geometric midpoint of the edge.
+
+class _EdgeLine extends StatelessWidget {
+  final bool isWeak;
+  final String? label;
+  final double distance;
+
+  const _EdgeLine({required this.isWeak, this.label, required this.distance});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sz = distance.clamp(1.0, 2000.0);
+    return SizedBox(
+      width: sz,
+      height: sz,
+      child: CustomPaint(
+        painter: _EdgePainter(
+          color: cs.outlineVariant.withValues(alpha: isWeak ? 0.35 : 0.7),
+          strokeWidth: isWeak ? 1.5 : 2.5,
+          isDashed: isWeak,
+          label: label,
+          labelColor: cs.secondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _EdgePainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final bool isDashed;
+  final String? label;
+  final Color labelColor;
+
+  const _EdgePainter({
+    required this.color,
+    required this.strokeWidth,
+    required this.isDashed,
+    required this.label,
+    required this.labelColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final end = size.bottomRight(Offset.zero);
+
+    if (isDashed) {
+      _drawDashedLine(canvas, Offset.zero, end, paint);
+    } else {
+      canvas.drawLine(Offset.zero, end, paint);
+    }
+
+    if (label != null && label!.isNotEmpty) {
+      final mid = Offset(size.width / 2, size.height / 2);
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
           ),
         ),
+        textDirection: TextDirection.ltr,
+      )..layout();
 
-        // Nodes Layer
-        for (final node in data.nodes) ...[
-          if (nodePositions.containsKey(node.id))
-            AnimatedPositioned(
-              key: ValueKey(node.id),
-              duration: const Duration(milliseconds: 700),
-              curve: Curves.fastOutSlowIn,
-              left: nodePositions[node.id]!.dx - 40,
-              top: nodePositions[node.id]!.dy - 50,
-              width: 80,
-              height: 100,
-              child: GestureDetector(
-                onTap: () => onNodeTap(node.id),
-                onDoubleTap: node.id == 0
-                    ? null
-                    : () => context.push('/people/${node.id}'),
-                behavior: HitTestBehavior.opaque,
-                child: _NodeWidget(node: node, isFocused: node.id == focusId),
-              ),
+      final rect = Rect.fromCenter(center: mid, width: tp.width + 10, height: tp.height + 4);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(6)),
+        Paint()..color = labelColor.withValues(alpha: isDashed ? 0.4 : 0.8),
+      );
+      tp.paint(canvas, mid - Offset(tp.width / 2, tp.height / 2));
+    }
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    const dashLen = 8.0;
+    const gapLen = 5.0;
+    final dx = end.dx - start.dx;
+    final dy = end.dy - start.dy;
+    final len = (end - start).distance;
+    if (len == 0) return;
+    final ux = dx / len;
+    final uy = dy / len;
+    double drawn = 0;
+    bool drawing = true;
+    while (drawn < len) {
+      final seg = drawing ? dashLen : gapLen;
+      final next = (drawn + seg).clamp(0.0, len);
+      if (drawing) {
+        canvas.drawLine(
+          Offset(start.dx + ux * drawn, start.dy + uy * drawn),
+          Offset(start.dx + ux * next, start.dy + uy * next),
+          paint,
+        );
+      }
+      drawn = next;
+      drawing = !drawing;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _EdgePainter old) =>
+      old.color != color || old.strokeWidth != strokeWidth;
+}
+
+class _CategoryFilter extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  const _CategoryFilter({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const cats = ['All', 'Friend', 'Family', 'Colleague', 'Other'];
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(32),
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4))],
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: cats.map((c) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ChoiceChip(
+              label: Text(c),
+              selected: selected == c,
+              onSelected: (s) => s ? onChanged(c) : null,
+              visualDensity: VisualDensity.compact,
             ),
-        ],
-      ],
+          )).toList(),
+        ),
+      ),
     );
   }
 }
@@ -512,211 +544,63 @@ class _GraphLayoutEngine extends StatelessWidget {
 class _NodeWidget extends StatelessWidget {
   final GraphNode node;
   final bool isFocused;
+  final bool isExpanded;
+  final VoidCallback onTap;
 
-  const _NodeWidget({required this.node, required this.isFocused});
+  const _NodeWidget({
+    required this.node,
+    required this.isFocused,
+    required this.isExpanded,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final color = node.isUser ? cs.primary : colorForCategory(node.category);
+    final circleSize = node.isGroup ? 72.0 : (isFocused ? 64.0 : (node.isUser ? 56.0 : 48.0));
 
-    Color nodeColor;
-    if (node.isUser) {
-      nodeColor = cs.primary;
-    } else {
-      nodeColor = colorForCategory(node.category);
-    }
-
-    // Weak nodes are smaller and more transparent
-    final double nodeSize = node.isWeak
-        ? 34
-        : isFocused
-        ? 64
-        : (node.isUser ? 56 : 48);
-
-    final double nodeOpacity = node.isWeak ? 0.55 : 1.0;
-
-    return Opacity(
-      opacity: nodeOpacity,
+    return GestureDetector(
+      onTap: onTap,
+      onDoubleTap: (node.id == 0 || node.isGroup) ? null : () => context.push('/people/${node.id}'),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            width: nodeSize,
-            height: nodeSize,
+            width: circleSize,
+            height: circleSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: nodeColor,
-              border: node.isWeak
-                  ? Border.all(
-                      color: cs.outlineVariant,
-                      width: 1.5,
-                      strokeAlign: BorderSide.strokeAlignOutside,
-                    )
-                  : Border.all(
-                      color: isFocused ? cs.onSurface : cs.surface,
-                      width: isFocused ? 3 : 2,
-                    ),
-              boxShadow: node.isWeak
-                  ? []
-                  : [
-                      BoxShadow(
-                        color: isFocused
-                            ? nodeColor.withValues(alpha: 0.6)
-                            : Colors.black.withValues(alpha: 0.2),
-                        blurRadius: isFocused ? 12 : 6,
-                        spreadRadius: isFocused ? 2 : 0,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              node.name.isNotEmpty ? node.name[0].toUpperCase() : '?',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: nodeSize * 0.45,
-                fontWeight: FontWeight.bold,
+              color: color,
+              border: Border.all(
+                color: isFocused ? cs.onSurface : (node.isGroup ? cs.outlineVariant : Colors.white),
+                width: isFocused ? 3.0 : (node.isGroup ? 4.0 : 2.0),
               ),
+              boxShadow: isFocused
+                  ? [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 12, spreadRadius: 4)]
+                  : [],
+            ),
+            child: Center(
+              child: node.isGroup
+                  ? Icon(isExpanded ? LucideIcons.chevronUp : LucideIcons.users, color: Colors.white, size: 24)
+                  : Text(
+                      node.name.isNotEmpty ? node.name[0].toUpperCase() : '?',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
             ),
           ),
           const SizedBox(height: 4),
-          AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 300),
+          Text(
+            node.isGroup ? '${node.name} (${node.memberCount})' : node.name,
             style: TextStyle(
-              color: node.isWeak
-                  ? cs.onSurface.withValues(alpha: 0.45)
-                  : isFocused
-                  ? cs.onSurface
-                  : cs.onSurfaceVariant,
-              fontSize: node.isWeak ? 10 : (isFocused ? 14 : 12),
-              fontWeight: isFocused ? FontWeight.bold : FontWeight.w600,
-            ),
-            child: Text(
-              node.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+              fontSize: 11,
+              fontWeight: isFocused ? FontWeight.bold : FontWeight.w500,
+              color: cs.onSurface,
             ),
           ),
         ],
       ),
     );
-  }
-}
-
-// ── Edges Painter ────────────────────────────────────────────────────────
-
-class _GraphEdgesPainter extends CustomPainter {
-  final GraphData data;
-  final Map<int, Offset> nodePositions;
-  final BuildContext context;
-
-  _GraphEdgesPainter({
-    required this.data,
-    required this.nodePositions,
-    required this.context,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cs = Theme.of(context).colorScheme;
-
-    final strongPaint = Paint()
-      ..color = cs.outlineVariant.withValues(alpha: 0.5)
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
-    final weakPaint = Paint()
-      ..color = cs.outlineVariant.withValues(alpha: 0.28)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-
-    for (final edge in data.edges) {
-      final sourcePos = nodePositions[edge.sourceId];
-      final targetPos = nodePositions[edge.targetId];
-
-      if (sourcePos != null && targetPos != null) {
-        if (edge.isWeak) {
-          // Draw dashed line for weak connections
-          _drawDashedLine(canvas, sourcePos, targetPos, weakPaint);
-        } else {
-          canvas.drawLine(sourcePos, targetPos, strongPaint);
-        }
-
-        // Draw relation label badge
-        final label = edge.relationLabel;
-        if (label != null && label.isNotEmpty) {
-          final midPoint = Offset(
-            (sourcePos.dx + targetPos.dx) / 2,
-            (sourcePos.dy + targetPos.dy) / 2,
-          );
-
-          textPainter.text = TextSpan(
-            text: label,
-            style: TextStyle(
-              color: edge.isWeak
-                  ? Colors.white.withValues(alpha: 0.6)
-                  : Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-            ),
-          );
-          textPainter.layout();
-
-          final badgeRect = Rect.fromCenter(
-            center: midPoint,
-            width: textPainter.width + 12,
-            height: textPainter.height + 6,
-          );
-
-          final rrect = RRect.fromRectAndRadius(
-            badgeRect,
-            const Radius.circular(12),
-          );
-          canvas.drawRRect(
-            rrect,
-            Paint()
-              ..color = cs.secondary.withValues(
-                alpha: edge.isWeak ? 0.35 : 0.8,
-              ),
-          );
-
-          textPainter.paint(
-            canvas,
-            midPoint - Offset(textPainter.width / 2, textPainter.height / 2),
-          );
-        }
-      }
-    }
-  }
-
-  void _drawDashedLine(
-    Canvas canvas,
-    Offset from,
-    Offset to,
-    Paint paint,
-  ) {
-    const dashLength = 8.0;
-    const gapLength = 5.0;
-
-    final total = (to - from).distance;
-    final direction = (to - from) / total;
-    double drawn = 0;
-
-    while (drawn < total) {
-      final start = from + direction * drawn;
-      final end = from + direction * (drawn + dashLength).clamp(0, total);
-      canvas.drawLine(start, end, paint);
-      drawn += dashLength + gapLength;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _GraphEdgesPainter oldDelegate) {
-    return true;
   }
 }

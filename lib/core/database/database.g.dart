@@ -125,6 +125,19 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
     requiredDuringInsert: false,
     defaultValue: const Constant('Other'),
   );
+  static const VerificationMeta _isWeakMeta = const VerificationMeta('isWeak');
+  @override
+  late final GeneratedColumn<bool> isWeak = GeneratedColumn<bool>(
+    'is_weak',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_weak" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -137,6 +150,7 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
     relation,
     averageGapDays,
     category,
+    isWeak,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -221,6 +235,12 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
         category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
       );
     }
+    if (data.containsKey('is_weak')) {
+      context.handle(
+        _isWeakMeta,
+        isWeak.isAcceptableOrUnknown(data['is_weak']!, _isWeakMeta),
+      );
+    }
     return context;
   }
 
@@ -270,6 +290,10 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
         DriftSqlType.string,
         data['${effectivePrefix}category'],
       )!,
+      isWeak: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_weak'],
+      )!,
     );
   }
 
@@ -298,6 +322,7 @@ class Person extends DataClass implements Insertable<Person> {
 
   /// E.g. 'Friend', 'Family', 'Colleague', 'Other'
   final String category;
+  final bool isWeak;
   const Person({
     required this.id,
     required this.name,
@@ -309,6 +334,7 @@ class Person extends DataClass implements Insertable<Person> {
     this.relation,
     this.averageGapDays,
     required this.category,
+    required this.isWeak,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -331,6 +357,7 @@ class Person extends DataClass implements Insertable<Person> {
       map['average_gap_days'] = Variable<double>(averageGapDays);
     }
     map['category'] = Variable<String>(category);
+    map['is_weak'] = Variable<bool>(isWeak);
     return map;
   }
 
@@ -354,6 +381,7 @@ class Person extends DataClass implements Insertable<Person> {
           ? const Value.absent()
           : Value(averageGapDays),
       category: Value(category),
+      isWeak: Value(isWeak),
     );
   }
 
@@ -377,6 +405,7 @@ class Person extends DataClass implements Insertable<Person> {
       relation: serializer.fromJson<String?>(json['relation']),
       averageGapDays: serializer.fromJson<double?>(json['averageGapDays']),
       category: serializer.fromJson<String>(json['category']),
+      isWeak: serializer.fromJson<bool>(json['isWeak']),
     );
   }
   @override
@@ -393,6 +422,7 @@ class Person extends DataClass implements Insertable<Person> {
       'relation': serializer.toJson<String?>(relation),
       'averageGapDays': serializer.toJson<double?>(averageGapDays),
       'category': serializer.toJson<String>(category),
+      'isWeak': serializer.toJson<bool>(isWeak),
     };
   }
 
@@ -407,6 +437,7 @@ class Person extends DataClass implements Insertable<Person> {
     Value<String?> relation = const Value.absent(),
     Value<double?> averageGapDays = const Value.absent(),
     String? category,
+    bool? isWeak,
   }) => Person(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -422,6 +453,7 @@ class Person extends DataClass implements Insertable<Person> {
         ? averageGapDays.value
         : this.averageGapDays,
     category: category ?? this.category,
+    isWeak: isWeak ?? this.isWeak,
   );
   Person copyWithCompanion(PeopleCompanion data) {
     return Person(
@@ -445,6 +477,7 @@ class Person extends DataClass implements Insertable<Person> {
           ? data.averageGapDays.value
           : this.averageGapDays,
       category: data.category.present ? data.category.value : this.category,
+      isWeak: data.isWeak.present ? data.isWeak.value : this.isWeak,
     );
   }
 
@@ -460,7 +493,8 @@ class Person extends DataClass implements Insertable<Person> {
           ..write('avatarPath: $avatarPath, ')
           ..write('relation: $relation, ')
           ..write('averageGapDays: $averageGapDays, ')
-          ..write('category: $category')
+          ..write('category: $category, ')
+          ..write('isWeak: $isWeak')
           ..write(')'))
         .toString();
   }
@@ -477,6 +511,7 @@ class Person extends DataClass implements Insertable<Person> {
     relation,
     averageGapDays,
     category,
+    isWeak,
   );
   @override
   bool operator ==(Object other) =>
@@ -491,7 +526,8 @@ class Person extends DataClass implements Insertable<Person> {
           other.avatarPath == this.avatarPath &&
           other.relation == this.relation &&
           other.averageGapDays == this.averageGapDays &&
-          other.category == this.category);
+          other.category == this.category &&
+          other.isWeak == this.isWeak);
 }
 
 class PeopleCompanion extends UpdateCompanion<Person> {
@@ -505,6 +541,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
   final Value<String?> relation;
   final Value<double?> averageGapDays;
   final Value<String> category;
+  final Value<bool> isWeak;
   const PeopleCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -516,6 +553,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     this.relation = const Value.absent(),
     this.averageGapDays = const Value.absent(),
     this.category = const Value.absent(),
+    this.isWeak = const Value.absent(),
   });
   PeopleCompanion.insert({
     this.id = const Value.absent(),
@@ -528,6 +566,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     this.relation = const Value.absent(),
     this.averageGapDays = const Value.absent(),
     this.category = const Value.absent(),
+    this.isWeak = const Value.absent(),
   }) : name = Value(name);
   static Insertable<Person> custom({
     Expression<int>? id,
@@ -540,6 +579,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     Expression<String>? relation,
     Expression<double>? averageGapDays,
     Expression<String>? category,
+    Expression<bool>? isWeak,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -554,6 +594,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
       if (relation != null) 'relation': relation,
       if (averageGapDays != null) 'average_gap_days': averageGapDays,
       if (category != null) 'category': category,
+      if (isWeak != null) 'is_weak': isWeak,
     });
   }
 
@@ -568,6 +609,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     Value<String?>? relation,
     Value<double?>? averageGapDays,
     Value<String>? category,
+    Value<bool>? isWeak,
   }) {
     return PeopleCompanion(
       id: id ?? this.id,
@@ -580,6 +622,7 @@ class PeopleCompanion extends UpdateCompanion<Person> {
       relation: relation ?? this.relation,
       averageGapDays: averageGapDays ?? this.averageGapDays,
       category: category ?? this.category,
+      isWeak: isWeak ?? this.isWeak,
     );
   }
 
@@ -618,6 +661,9 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     if (category.present) {
       map['category'] = Variable<String>(category.value);
     }
+    if (isWeak.present) {
+      map['is_weak'] = Variable<bool>(isWeak.value);
+    }
     return map;
   }
 
@@ -633,7 +679,8 @@ class PeopleCompanion extends UpdateCompanion<Person> {
           ..write('avatarPath: $avatarPath, ')
           ..write('relation: $relation, ')
           ..write('averageGapDays: $averageGapDays, ')
-          ..write('category: $category')
+          ..write('category: $category, ')
+          ..write('isWeak: $isWeak')
           ..write(')'))
         .toString();
   }
@@ -1967,6 +2014,7 @@ typedef $$PeopleTableCreateCompanionBuilder =
       Value<String?> relation,
       Value<double?> averageGapDays,
       Value<String> category,
+      Value<bool> isWeak,
     });
 typedef $$PeopleTableUpdateCompanionBuilder =
     PeopleCompanion Function({
@@ -1980,6 +2028,7 @@ typedef $$PeopleTableUpdateCompanionBuilder =
       Value<String?> relation,
       Value<double?> averageGapDays,
       Value<String> category,
+      Value<bool> isWeak,
     });
 
 final class $$PeopleTableReferences
@@ -2079,6 +2128,11 @@ class $$PeopleTableFilterComposer
 
   ColumnFilters<String> get category => $composableBuilder(
     column: $table.category,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isWeak => $composableBuilder(
+    column: $table.isWeak,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2191,6 +2245,11 @@ class $$PeopleTableOrderingComposer
     column: $table.category,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isWeak => $composableBuilder(
+    column: $table.isWeak,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PeopleTableAnnotationComposer
@@ -2241,6 +2300,9 @@ class $$PeopleTableAnnotationComposer
 
   GeneratedColumn<String> get category =>
       $composableBuilder(column: $table.category, builder: (column) => column);
+
+  GeneratedColumn<bool> get isWeak =>
+      $composableBuilder(column: $table.isWeak, builder: (column) => column);
 
   Expression<T> personLabelsRefs<T extends Object>(
     Expression<T> Function($$PersonLabelsTableAnnotationComposer a) f,
@@ -2331,6 +2393,7 @@ class $$PeopleTableTableManager
                 Value<String?> relation = const Value.absent(),
                 Value<double?> averageGapDays = const Value.absent(),
                 Value<String> category = const Value.absent(),
+                Value<bool> isWeak = const Value.absent(),
               }) => PeopleCompanion(
                 id: id,
                 name: name,
@@ -2342,6 +2405,7 @@ class $$PeopleTableTableManager
                 relation: relation,
                 averageGapDays: averageGapDays,
                 category: category,
+                isWeak: isWeak,
               ),
           createCompanionCallback:
               ({
@@ -2355,6 +2419,7 @@ class $$PeopleTableTableManager
                 Value<String?> relation = const Value.absent(),
                 Value<double?> averageGapDays = const Value.absent(),
                 Value<String> category = const Value.absent(),
+                Value<bool> isWeak = const Value.absent(),
               }) => PeopleCompanion.insert(
                 id: id,
                 name: name,
@@ -2366,6 +2431,7 @@ class $$PeopleTableTableManager
                 relation: relation,
                 averageGapDays: averageGapDays,
                 category: category,
+                isWeak: isWeak,
               ),
           withReferenceMapper: (p0) => p0
               .map(
