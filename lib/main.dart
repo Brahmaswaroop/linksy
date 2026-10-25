@@ -21,21 +21,12 @@ void main() async {
   // Initialize notifications through the provider to ensure the singleton is ready
   final notificationService = container.read(notificationServiceProvider);
   await notificationService.init();
-  final container = ProviderContainer(
-    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-  );
-
-  // Initialize notifications through the provider to ensure the singleton is ready
-  final notificationService = container.read(notificationServiceProvider);
-  await notificationService.init();
 
   // Re-schedule the daily notification on every app start if reminders are on.
   final remindersEnabled = prefs.getBool('daily_reminders_enabled') ?? true;
   if (remindersEnabled) {
     final hour = prefs.getInt('notification_time_hour') ?? 10;
     final minute = prefs.getInt('notification_time_minute') ?? 0;
-    await notificationService.scheduleDailyDigest(
-      TimeOfDay(hour: hour, minute: minute),
     await notificationService.scheduleDailyDigest(
       TimeOfDay(hour: hour, minute: minute),
     );
@@ -59,8 +50,6 @@ void main() async {
   }
 
   runApp(
-    UncontrolledProviderScope(
-      container: container,
     UncontrolledProviderScope(
       container: container,
       child: const MyBondsApp(),
