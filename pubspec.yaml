@@ -53,9 +53,9 @@ dependencies:
   shared_preferences: ^2.5.4
   timezone: ^0.10.1
   flutter_timezone: ^5.0.1
-  force_directed_graph: ^0.1.1
-  flutter_force_directed_graph: 1.0.8
-  vector_math: ^2.2.0
+  flutter_contacts: ^2.1.0
+  url_launcher: ^6.3.3
+  call_log: ^6.0.1
 
 dev_dependencies:
   flutter_test:
