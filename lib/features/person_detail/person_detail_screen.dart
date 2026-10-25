@@ -8,23 +8,51 @@ import '../../core/database/database.dart';
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/interactions_repository.dart';
 import '../../core/database/repositories/labels_repository.dart';
-import '../../core/database/repositories/person_connections_repository.dart';
 import '../../core/engine/health_score_engine.dart';
 import '../../core/utils/frequency_formatter.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/contact_action_helper.dart';
+import '../../core/services/call_log_sync_service.dart';
 import '../interactions/log_interaction_screen.dart';
-import 'add_connection_sheet.dart';
 
-class PersonDetailScreen extends ConsumerWidget {
+class PersonDetailScreen extends ConsumerStatefulWidget {
   final int personId;
   const PersonDetailScreen({super.key, required this.personId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final personAsync = ref.watch(personStreamProvider(personId));
-    final interactionsAsync = ref.watch(personInteractionsProvider(personId));
+  ConsumerState<PersonDetailScreen> createState() => _PersonDetailScreenState();
+}
+
+class _PersonDetailScreenState extends ConsumerState<PersonDetailScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(callLogSyncServiceProvider).syncCallLogs();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(callLogSyncServiceProvider).syncCallLogs();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final personAsync = ref.watch(personStreamProvider(widget.personId));
+    final interactionsAsync = ref.watch(personInteractionsProvider(widget.personId));
     final engine = ref.watch(healthScoreEngineProvider);
-    final labelsAsync = ref.watch(labelsForPersonProvider(personId));
+    final labelsAsync = ref.watch(labelsForPersonProvider(widget.personId));
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
 
@@ -42,7 +70,9 @@ class PersonDetailScreen extends ConsumerWidget {
           final score = status.baseScore;
           final hColor = healthColor(score);
 
-          return CustomScrollView(
+          return RefreshIndicator(
+            onRefresh: () => ref.read(callLogSyncServiceProvider).syncCallLogs(),
+            child: CustomScrollView(
             slivers: [
               // ── Hero SliverAppBar ──────────────────────────────────────
               SliverAppBar(
@@ -51,8 +81,26 @@ class PersonDetailScreen extends ConsumerWidget {
                 stretch: true,
                 actions: [
                   IconButton(
+                    icon: const Icon(LucideIcons.refreshCw, color: Colors.white),
+                    tooltip: 'Sync Call Logs',
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      final result = await ref.read(callLogSyncServiceProvider).syncCallLogs();
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            result.syncedInteractionsCount > 0
+                                ? 'Synced ${result.syncedInteractionsCount} new call(s)'
+                                : 'Call log is up to date',
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  IconButton(
                     icon: const Icon(LucideIcons.edit, color: Colors.white),
-                    onPressed: () => context.go('/people/$personId/edit'),
+                    onPressed: () => context.go('/people/${widget.personId}/edit'),
                   ),
                 ],
                 flexibleSpace: FlexibleSpaceBar(
@@ -110,38 +158,6 @@ class PersonDetailScreen extends ConsumerWidget {
                             Wrap(
                               spacing: 8,
                               children: [
-                                if (person.isWeak)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: Colors.white.withValues(alpha: 0.4),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          LucideIcons.link2Off,
-                                          size: 12,
-                                          color: Colors.white,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Weak Connection',
-                                          style: tt.bodySmall?.copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                                 if (person.category.isNotEmpty)
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -206,6 +222,17 @@ class PersonDetailScreen extends ConsumerWidget {
                 ),
               ),
 
+              // ── Quick Communication Actions ────────────────────────────
+              if ((person.phoneNumber != null &&
+                      person.phoneNumber!.trim().isNotEmpty) ||
+                  (person.email != null && person.email!.trim().isNotEmpty))
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _ContactActionCard(person: person),
+                  ),
+                ),
+
               // ── Health Stats ────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
@@ -219,13 +246,14 @@ class PersonDetailScreen extends ConsumerWidget {
                 ),
               ),
 
-              // ── Connections ─────────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: _ConnectionsSection(personId: personId),
+              // ── Notes ──────────────────────────────────────────────────
+              if (person.notes != null && person.notes!.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _NotesSection(notes: person.notes!),
+                  ),
                 ),
-              ),
 
               // ── Timeline Header ─────────────────────────────────────────
               SliverToBoxAdapter(
@@ -250,7 +278,7 @@ class PersonDetailScreen extends ConsumerWidget {
                       ),
                       const Spacer(),
                       FilledButton.icon(
-                        onPressed: () => context.go('/people/$personId/log'),
+                        onPressed: () => context.go('/people/${widget.personId}/log'),
                         icon: const Icon(LucideIcons.plusCircle, size: 14),
                         label: const Text('Log'),
                         style: FilledButton.styleFrom(
@@ -307,7 +335,7 @@ class PersonDetailScreen extends ConsumerWidget {
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (_) => LogInteractionScreen(
-                                  personId: personId,
+                                  personId: widget.personId,
                                   existingInteraction: interaction,
                                 ),
                               ),
@@ -326,341 +354,13 @@ class PersonDetailScreen extends ConsumerWidget {
                 ),
               ),
             ],
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) =>
             Center(child: Text('Error loading person: $err')),
       ),
-    );
-  }
-}
-
-// ── Connections Section (Linked Carousel) ───────────────────────────────────
-
-class _ConnectionsSection extends ConsumerWidget {
-  final int personId;
-  const _ConnectionsSection({required this.personId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final connectionsAsync = ref.watch(personConnectionsProvider(personId));
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Icon(LucideIcons.gitMerge, size: 18, color: cs.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'Connected To',
-                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-            TextButton.icon(
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (context) {
-                    return AddConnectionSheet(sourcePersonId: personId);
-                  },
-                );
-              },
-              icon: const Icon(LucideIcons.plus, size: 16),
-              label: const Text('Add'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        connectionsAsync.when(
-          data: (connections) {
-            if (connections.isEmpty) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: cs.outlineVariant.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Text(
-                  'No connections yet.',
-                  style: tt.bodySmall?.copyWith(
-                    color: cs.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-              );
-            }
-            final strong = connections.where((c) => !c.isWeak).toList();
-            final weak = connections.where((c) => c.isWeak).toList();
-            final combinedCount =
-                strong.length + (weak.isNotEmpty && strong.isNotEmpty ? 1 : 0) + weak.length;
-
-            return SizedBox(
-              height: 110,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 0),
-                itemCount: combinedCount,
-                separatorBuilder: (context, index) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  // Determine if this index is the divider
-                  if (strong.isNotEmpty && weak.isNotEmpty && index == strong.length) {
-                    return Center(
-                      child: Container(
-                        width: 1,
-                        height: 60,
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        color: cs.outlineVariant.withValues(alpha: 0.5),
-                      ),
-                    );
-                  }
-
-                  // Determine which connection to show
-                  final isInWeakSection = strong.isNotEmpty && weak.isNotEmpty
-                      ? index > strong.length
-                      : index >= strong.length;
-                  
-                  final conn = isInWeakSection
-                      ? weak[index - (strong.isNotEmpty && weak.isNotEmpty ? strong.length + 1 : strong.length)]
-                      : strong[index];
-
-                  final repo = ref.read(personConnectionsRepositoryProvider);
-                  final otherPersonId = repo.getOtherPersonId(conn, personId);
-
-                  return Consumer(
-                    builder: (context, ref, child) {
-                      final otherPersonAsync = ref.watch(
-                        personStreamProvider(otherPersonId),
-                      );
-                      return otherPersonAsync.when(
-                        data: (other) {
-                          final isWeak = conn.isWeak;
-                          return GestureDetector(
-                            onTap: () => context.push('/people/${other.id}'),
-                            onLongPress: () {
-                              final controller = TextEditingController(
-                                text: conn.relationLabel,
-                              );
-                              bool weakFlag = conn.isWeak;
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => StatefulBuilder(
-                                  builder: (ctx, setDlgState) => AlertDialog(
-                                    title: const Text('Edit Connection'),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Connected to ${other.name}',
-                                        ),
-                                        const SizedBox(height: 16),
-                                        TextField(
-                                          controller: controller,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Relation Label',
-                                          ),
-                                          autofocus: true,
-                                        ),
-                                        const SizedBox(height: 12),
-                                        SwitchListTile(
-                                          value: weakFlag,
-                                          onChanged: (v) => setDlgState(
-                                            () => weakFlag = v,
-                                          ),
-                                          title: const Text(
-                                            'Weak connection',
-                                          ),
-                                          subtitle: const Text(
-                                            'Indirect / friend-of-a-friend',
-                                          ),
-                                          contentPadding: EdgeInsets.zero,
-                                          dense: true,
-                                        ),
-                                      ],
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () async {
-                                          final repository = ref.read(
-                                            personConnectionsRepositoryProvider,
-                                          );
-                                          await repository
-                                              .deleteConnection(conn.id);
-                                          if (ctx.mounted) {
-                                            Navigator.pop(ctx);
-                                          }
-                                        },
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: Colors.red,
-                                        ),
-                                        child: const Text('Delete'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () async {
-                                          final newLabel =
-                                              controller.text.trim();
-                                          final repository = ref.read(
-                                            personConnectionsRepositoryProvider,
-                                          );
-                                          if (newLabel.isNotEmpty) {
-                                            await repository.updateConnection(
-                                              conn.copyWith(
-                                                relationLabel: newLabel,
-                                                isWeak: weakFlag,
-                                              ),
-                                            );
-                                          }
-                                          if (ctx.mounted) {
-                                            Navigator.pop(ctx);
-                                          }
-                                        },
-                                        child: const Text('Save'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              width: 120,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: isWeak
-                                    ? cs.surfaceContainerHighest.withValues(
-                                        alpha: 0.2,
-                                      )
-                                    : cs.surfaceContainerHighest.withValues(
-                                        alpha: 0.4,
-                                      ),
-                                borderRadius: BorderRadius.circular(16),
-                                border: isWeak
-                                    ? Border.all(
-                                        color: cs.outlineVariant.withValues(
-                                          alpha: 0.4,
-                                        ),
-                                        width: 1.0,
-                                        strokeAlign:
-                                            BorderSide.strokeAlignInside,
-                                      )
-                                    : Border.all(
-                                        color: cs.outlineVariant.withValues(
-                                          alpha: 0.3,
-                                        ),
-                                      ),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 20,
-                                        backgroundColor: avatarColorFromName(
-                                          other.name,
-                                        ).withValues(
-                                          alpha: isWeak ? 0.45 : 1.0,
-                                        ),
-                                        child: Text(
-                                          other.name[0].toUpperCase(),
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: isWeak ? 0.7 : 1.0,
-                                            ),
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      if (isWeak)
-                                        Positioned(
-                                          right: -4,
-                                          bottom: -4,
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: cs.surface,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            padding: const EdgeInsets.all(2),
-                                            child: Icon(
-                                              LucideIcons.link2Off,
-                                              size: 10,
-                                              color: cs.outline,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    other.name,
-                                    style: tt.labelMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: cs.onSurface.withValues(
-                                        alpha: isWeak ? 0.6 : 1.0,
-                                      ),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  Text(
-                                    conn.relationLabel,
-                                    style: tt.labelSmall?.copyWith(
-                                      color: isWeak ? cs.outline : cs.primary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                        loading: () => Container(
-                          width: 120,
-                          color: cs.surfaceContainerHighest.withValues(
-                            alpha: 0.4,
-                          ),
-                        ),
-                        error: (err, stack) => const SizedBox(
-                          width: 120,
-                          child: Center(child: Text('Error')),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            );
-          },
-          loading: () => const SizedBox(
-            height: 110,
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          error: (e, trace) => Text('Error: $e'),
-        ),
-      ],
     );
   }
 }
@@ -767,6 +467,73 @@ class _HealthStatsCard extends StatelessWidget {
                 ? '${status.daysOverdue} days'
                 : '${status.daysOverdue.abs()} days',
             valueColor: status.daysOverdue > 0 ? const Color(0xFFF44336) : null,
+          ),
+          if (person.birthday != null) ...[
+            const SizedBox(height: 8),
+            _StatRow(
+              icon: LucideIcons.cake,
+              label: 'Birthday',
+              value: _formatBirthday(person.birthday!),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatBirthday(DateTime bday) {
+    final now = DateTime.now();
+    int age = now.year - bday.year;
+    if (now.month < bday.month || (now.month == bday.month && now.day < bday.day)) {
+      age--;
+    }
+    
+    DateTime nextBday = DateTime(now.year, bday.month, bday.day);
+    if (nextBday.isBefore(DateTime(now.year, now.month, now.day))) {
+      nextBday = DateTime(now.year + 1, bday.month, bday.day);
+    }
+    final daysUntil = nextBday.difference(DateTime(now.year, now.month, now.day)).inDays;
+    final daysStr = daysUntil == 0 ? 'Today' : 'in $daysUntil days';
+    
+    return '${bday.month}/${bday.day}/${bday.year} ($age yrs, $daysStr)';
+  }
+}
+
+class _NotesSection extends StatelessWidget {
+  final String notes;
+  const _NotesSection({required this.notes});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(LucideIcons.fileText, size: 16, color: cs.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Notes',
+                style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            notes,
+            style: tt.bodyMedium?.copyWith(
+              color: cs.onSurface.withValues(alpha: 0.8),
+            ),
           ),
         ],
       ),
@@ -961,3 +728,153 @@ class _TimelineItem extends StatelessWidget {
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}, $hour:$minute $period';
   }
 }
+
+class _ContactActionCard extends StatelessWidget {
+  final Person person;
+  const _ContactActionCard({required this.person});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final phone = person.phoneNumber?.trim();
+    final email = person.email?.trim();
+
+    return Material(
+      color: cs.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: cs.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Contact',
+              style: tt.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            if (phone != null && phone.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(LucideIcons.phone, size: 16, color: cs.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          phone,
+                          style: tt.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          'Mobile',
+                          style: tt.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: () => ContactActionHelper.call(phone),
+                    icon: const Icon(LucideIcons.phoneCall, size: 16),
+                    tooltip: 'Call',
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                      foregroundColor: const Color(0xFF2563EB),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    onPressed: () => ContactActionHelper.sms(phone),
+                    icon: const Icon(LucideIcons.messageSquare, size: 16),
+                    tooltip: 'SMS',
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFF0D9488).withValues(alpha: 0.12),
+                      foregroundColor: const Color(0xFF0D9488),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    onPressed: () => ContactActionHelper.openWhatsApp(phone),
+                    icon: const Icon(LucideIcons.messageCircle, size: 16),
+                    tooltip: 'WhatsApp',
+                    style: IconButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A).withValues(alpha: 0.12),
+                      foregroundColor: const Color(0xFF16A34A),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (email != null && email.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(LucideIcons.mail, size: 16, color: cs.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          email,
+                          style: tt.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          'Email',
+                          style: tt.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: () => ContactActionHelper.sendEmail(email),
+                    icon: const Icon(LucideIcons.send, size: 16),
+                    tooltip: 'Send Email',
+                    style: IconButton.styleFrom(
+                      backgroundColor: cs.primary.withValues(alpha: 0.12),
+                      foregroundColor: cs.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+

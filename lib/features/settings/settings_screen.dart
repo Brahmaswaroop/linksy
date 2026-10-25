@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/backup_service.dart';
 import 'settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -178,6 +179,71 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                         onTap: () async {
                           await ref.read(notificationServiceProvider).requestBatteryOptimizationExemption();
+                        },
+                      );
+                    },
+                  ),
+                  const Divider(height: 32),
+                  _SectionHeader(title: 'Data Management'),
+                  ListTile(
+                    leading: const Icon(LucideIcons.download),
+                    title: const Text('Export Data'),
+                    subtitle: const Text('Backup all data to JSON'),
+                    onTap: () async {
+                      try {
+                        final backupService = ref.read(backupServiceProvider);
+                        final path = await backupService.exportData();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Backup saved to: $path')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Export failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(LucideIcons.upload),
+                    title: const Text('Import Data'),
+                    subtitle: const Text('Restore data from JSON text'),
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) {
+                          final controller = TextEditingController();
+                          return AlertDialog(
+                            title: const Text('Import JSON'),
+                            content: TextField(
+                              controller: controller,
+                              maxLines: 10,
+                              decoration: const InputDecoration(hintText: 'Paste JSON backup here'),
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                              FilledButton(
+                                onPressed: () async {
+                                  try {
+                                    final backupService = ref.read(backupServiceProvider);
+                                    await backupService.importData(controller.text);
+                                    if (ctx.mounted) {
+                                      Navigator.pop(ctx);
+                                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Import successful! Restart app to reflect changes.')));
+                                    }
+                                  } catch (e) {
+                                    if (ctx.mounted) {
+                                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+                                    }
+                                  }
+                                },
+                                child: const Text('Import'),
+                              ),
+                            ],
+                          );
                         },
                       );
                     },

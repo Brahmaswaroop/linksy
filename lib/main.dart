@@ -32,8 +32,22 @@ void main() async {
     );
   }
 
-  // Set up background recalculation
+  // Set up background call log sync & overdue contact checks
   await BackgroundJobService.initialize();
+  BackgroundJobService.scheduleDailyHealthCheck();
+
+  // Check if app was launched via notification click
+  final launchDetails = await notificationService
+      .flutterLocalNotificationsPlugin
+      .getNotificationAppLaunchDetails();
+  if (launchDetails != null &&
+      launchDetails.didNotificationLaunchApp &&
+      launchDetails.notificationResponse?.payload != null) {
+    final personId = int.tryParse(launchDetails.notificationResponse!.payload!);
+    if (personId != null) {
+      container.read(initialLocationProvider.notifier).state = '/people/$personId';
+    }
+  }
 
   runApp(
     UncontrolledProviderScope(

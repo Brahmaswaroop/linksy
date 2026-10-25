@@ -2,18 +2,81 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/interactions_repository.dart';
 import '../../core/engine/health_score_engine.dart';
 import '../../core/database/database.dart';
+import '../../core/services/call_log_sync_service.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/contact_action_helper.dart';
+import '../people/widgets/bulk_import_sheet.dart';
 
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  bool _isSyncing = false;
+
+  void _openBulkImportSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const BulkImportSheet(),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _syncCallLogs(showFeedback: false);
+      final people = await ref.read(peopleRepositoryProvider).getAllPeople();
+      final prefs = await SharedPreferences.getInstance();
+      final hasSeenPrompt = prefs.getBool('has_prompted_contacts_onboarding') ?? false;
+      if (people.isEmpty && !hasSeenPrompt && mounted) {
+        await prefs.setBool('has_prompted_contacts_onboarding', true);
+        _openBulkImportSheet();
+      }
+    });
+  }
+
+  Future<void> _syncCallLogs({bool showFeedback = false}) async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
+    try {
+      final syncService = ref.read(callLogSyncServiceProvider);
+      final result = await syncService.syncCallLogs();
+
+      if (mounted && showFeedback) {
+        final message = result.syncedInteractionsCount > 0
+            ? 'Synced ${result.syncedInteractionsCount} calls with ${result.updatedContactNames.join(", ")}'
+            : 'Call history is up to date';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final peopleAsync = ref.watch(allPeopleProvider);
     final engine = ref.watch(healthScoreEngineProvider);
     final colorScheme = Theme.of(context).colorScheme;
@@ -26,6 +89,17 @@ class DashboardScreen extends ConsumerWidget {
           style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
         actions: [
+          IconButton(
+            icon: _isSyncing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(LucideIcons.refreshCw),
+            tooltip: 'Sync Call History',
+            onPressed: () => _syncCallLogs(showFeedback: true),
+          ),
           IconButton(
             icon: const Icon(LucideIcons.settings),
             onPressed: () => context.push('/settings'),
@@ -78,7 +152,9 @@ class DashboardScreen extends ConsumerWidget {
           final total = people.length;
           final strongRatio = total == 0 ? 0.0 : strong / total;
 
-          return CustomScrollView(
+          return RefreshIndicator(
+            onRefresh: () => _syncCallLogs(showFeedback: true),
+            child: CustomScrollView(
             slivers: [
               // ── Gradient Health Header ──────────────────────────────────
               SliverToBoxAdapter(
@@ -140,7 +216,16 @@ class DashboardScreen extends ConsumerWidget {
               ),
 
               // ── Needs Attention List ────────────────────────────────────
-              if (needsAttention.isEmpty)
+              if (people.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: _WelcomeEmptyDashboardCard(
+                      onImport: _openBulkImportSheet,
+                    ),
+                  ),
+                )
+              else if (needsAttention.isEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(40.0),
@@ -200,7 +285,8 @@ class DashboardScreen extends ConsumerWidget {
               // ── Recently Contacted Section ──────────────────────────────
               SliverToBoxAdapter(child: _RecentlyContactedSection()),
             ],
-          );
+          ),
+        );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Error loading data: $err')),
@@ -493,24 +579,45 @@ class _AttentionCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Log button
-                FilledButton.tonal(
-                  onPressed: onLog,
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(LucideIcons.messageCircle, size: 14),
-                      SizedBox(width: 4),
-                      Text('Log', style: TextStyle(fontSize: 12)),
+                // Actions
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (person.phoneNumber != null &&
+                        person.phoneNumber!.trim().isNotEmpty) ...[
+                      IconButton.filledTonal(
+                        onPressed: () =>
+                            ContactActionHelper.call(person.phoneNumber!),
+                        icon: const Icon(LucideIcons.phone, size: 14),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Call ${person.name}',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                          foregroundColor: const Color(0xFF2563EB),
+                          padding: const EdgeInsets.all(8),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
                     ],
-                  ),
+                    FilledButton.tonal(
+                      onPressed: onLog,
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(LucideIcons.messageCircle, size: 14),
+                          SizedBox(width: 4),
+                          Text('Log', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -827,3 +934,70 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
     );
   }
 }
+
+class _WelcomeEmptyDashboardCard extends StatelessWidget {
+  final VoidCallback onImport;
+  const _WelcomeEmptyDashboardCard({required this.onImport});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: 0.45),
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cs.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              LucideIcons.contact,
+              size: 32,
+              color: cs.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Track Your Connections',
+            style: tt.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Select friends, family, or colleagues from your contacts and set how often you want to reconnect. Linksy monitors calls and reminds you when someone is overdue.',
+            textAlign: TextAlign.center,
+            style: tt.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: onImport,
+            icon: const Icon(LucideIcons.userPlus, size: 18),
+            label: const Text('Select Contacts to Track'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

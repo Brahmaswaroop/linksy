@@ -8,14 +8,13 @@ import 'package:drift/drift.dart' hide Column;
 import '../../core/database/database.dart';
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/labels_repository.dart';
-import '../../core/database/repositories/person_connections_repository.dart';
+import '../../core/services/contacts_service.dart';
 import '../../core/utils/frequency_formatter.dart';
 
 class AddPersonScreen extends ConsumerStatefulWidget {
   final int? personId;
-  final int? linkToPersonId;
 
-  const AddPersonScreen({super.key, this.personId, this.linkToPersonId});
+  const AddPersonScreen({super.key, this.personId});
 
   @override
   ConsumerState<AddPersonScreen> createState() => _AddPersonScreenState();
@@ -25,6 +24,12 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _relationController;
+  late TextEditingController _notesController;
+  late TextEditingController _phoneController;
+  late TextEditingController _emailController;
+  String? _systemContactId;
+  String? _avatarPath;
+  DateTime? _birthday;
   final Set<int> _selectedLabelIds = {};
   int _targetFrequencyDays = 14;
   int _priorityLevel = 2; // 1 = Low, 2 = Medium, 3 = High
@@ -33,18 +38,17 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
   static const _categories = ['Friend', 'Family', 'Colleague', 'Other'];
 
   bool _isLoading = false;
-  bool _isWeak = false;
-  int? _intermediatePersonId;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
     _relationController = TextEditingController();
+    _notesController = TextEditingController();
+    _phoneController = TextEditingController();
+    _emailController = TextEditingController();
     if (widget.personId != null) {
       _loadPersonData();
-    } else if (widget.linkToPersonId != null) {
-      _intermediatePersonId = widget.linkToPersonId;
     }
   }
 
@@ -57,31 +61,21 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
       final labelsRepo = ref.read(labelsRepositoryProvider);
       final labels = await labelsRepo.getLabelsForPerson(widget.personId!);
 
-      // Check if this person has any weak connections
-      final conns = await ref
-          .read(personConnectionsRepositoryProvider)
-          .watchConnectionsForPerson(widget.personId!)
-          .first;
-      final weakConn = conns.cast<PersonConnection?>().firstWhere(
-            (c) => c != null && c.isWeak,
-            orElse: () => null,
-          );
-
       if (mounted) {
         setState(() {
           _nameController.text = person.name;
           _relationController.text = person.relation ?? '';
+          _notesController.text = person.notes ?? '';
+          _phoneController.text = person.phoneNumber ?? '';
+          _emailController.text = person.email ?? '';
+          _systemContactId = person.systemContactId;
+          _avatarPath = person.avatarPath;
+          _birthday = person.birthday;
           _priorityLevel = person.priorityLevel;
           _targetFrequencyDays = person.targetFrequencyDays;
           _selectedLabelIds.addAll(labels.map((e) => e.id));
-          _isWeak = person.isWeak;
           if (_categories.contains(person.category)) {
             _category = person.category;
-          }
-          if (weakConn != null) {
-            _intermediatePersonId = weakConn.personId == widget.personId
-                ? weakConn.connectedPersonId
-                : weakConn.personId;
           }
         });
       }
@@ -92,10 +86,53 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
     }
   }
 
+  Future<void> _importFromContacts() async {
+    try {
+      final contactService = ref.read(contactsServiceProvider);
+      final contact = await contactService.pickDeviceContact();
+      if (contact == null) return;
+
+      if (mounted) {
+        setState(() {
+          if (contact.displayName.isNotEmpty) {
+            _nameController.text = contact.displayName;
+          }
+          if (contact.phoneNumber != null) {
+            _phoneController.text = contact.phoneNumber!;
+          }
+          if (contact.email != null) {
+            _emailController.text = contact.email!;
+          }
+          _systemContactId = contact.id;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Imported details for ${contact.displayName}'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not access contacts: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
     _relationController.dispose();
+    _notesController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
     super.dispose();
   }
 
@@ -103,6 +140,8 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
     if (_formKey.currentState!.validate()) {
       final repository = ref.read(peopleRepositoryProvider);
       final relationText = _relationController.text.trim();
+      final phoneText = _phoneController.text.trim();
+      final emailText = _emailController.text.trim();
 
       int savedPersonId;
 
@@ -111,11 +150,16 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
         await repository.updatePerson(
           currentPerson.copyWith(
             name: _nameController.text.trim(),
-            category: _isWeak ? 'Other' : _category,
+            category: _category,
             relation: Value(relationText.isEmpty ? null : relationText),
+            phoneNumber: Value(phoneText.isEmpty ? null : phoneText),
+            email: Value(emailText.isEmpty ? null : emailText),
+            systemContactId: Value(_systemContactId),
+            avatarPath: Value(_avatarPath),
+            notes: Value(_notesController.text.trim().isEmpty ? null : _notesController.text.trim()),
+            birthday: Value(_birthday),
             priorityLevel: _priorityLevel,
             targetFrequencyDays: _targetFrequencyDays,
-            isWeak: _isWeak,
           ),
         );
         savedPersonId = widget.personId!;
@@ -123,13 +167,18 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
         savedPersonId = await repository.insertPerson(
           PeopleCompanion.insert(
             name: _nameController.text.trim(),
-            category: Value(_isWeak ? 'Other' : _category),
+            category: Value(_category),
             relation: relationText.isEmpty
                 ? const Value.absent()
                 : Value(relationText),
+            phoneNumber: Value(phoneText.isEmpty ? null : phoneText),
+            email: Value(emailText.isEmpty ? null : emailText),
+            systemContactId: Value(_systemContactId),
+            avatarPath: Value(_avatarPath),
+            notes: Value(_notesController.text.trim().isEmpty ? null : _notesController.text.trim()),
+            birthday: Value(_birthday),
             priorityLevel: Value(_priorityLevel),
             targetFrequencyDays: Value(_targetFrequencyDays),
-            isWeak: Value(_isWeak),
           ),
         );
       }
@@ -142,35 +191,6 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
       if (_selectedLabelIds.isNotEmpty) {
         for (final labelId in _selectedLabelIds) {
           await labelsRepo.attachLabelToPerson(savedPersonId, labelId);
-        }
-      }
-
-      final isEdit = widget.personId != null;
-      final connectionsRepo = ref.read(personConnectionsRepositoryProvider);
-      if (_isWeak && _intermediatePersonId != null) {
-        // WEAK connection: Intermediate <-> New (isWeak = true)
-        await connectionsRepo.updateConnectionPerspective(
-          _intermediatePersonId!,
-          savedPersonId,
-          relationText.isEmpty ? 'Friend' : relationText,
-          isWeak: true,
-        );
-      } else if (widget.linkToPersonId != null && !_isWeak) {
-        // Normal (Strong) connection to the current profile
-        await connectionsRepo.updateConnectionPerspective(
-          widget.linkToPersonId!,
-          savedPersonId,
-          relationText.isEmpty ? 'Friend' : relationText,
-          isWeak: false,
-        );
-      } else if (isEdit && !_isWeak) {
-        // If it was weak but now is strong, we might want to clean up the weak connection.
-        // For simplicity, we search for any connection marked isWeak and delete it if we are now strong.
-        final conns = await connectionsRepo.watchConnectionsForPerson(savedPersonId).first;
-        for (final c in conns) {
-          if (c.isWeak) {
-            await connectionsRepo.deleteConnection(c.id);
-          }
         }
       }
 
@@ -216,117 +236,160 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
+            // ── Google / Phone Contact Import Banner ────────────
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: cs.primary.withValues(alpha: 0.15),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(LucideIcons.contact, color: cs.primary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Import from Phone Contacts',
+                          style: tt.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        Text(
+                          'Fill details from Google / Phone Contacts',
+                          style: tt.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonal(
+                    onPressed: _importFromContacts,
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: const Text('Import'),
+                  ),
+                ],
+              ),
+            ),
+
             // ── Basic Info Card ─────────────────────────────────────────
             _SectionCard(
               icon: LucideIcons.user,
               title: 'Basic Info',
               child: Column(
                 children: [
-                   SwitchListTile(
-                    value: _isWeak,
-                    onChanged: (v) => setState(() => _isWeak = v),
-                    title: Text(
-                      'Weak Connection',
-                      style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      'Indirect links (e.g. John\'s Wife)',
-                      style: tt.bodySmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    secondary: Icon(
-                      _isWeak ? LucideIcons.link2Off : LucideIcons.link2,
-                      color: _isWeak ? cs.primary : cs.outline,
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  const Divider(height: 24),
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(
-                      labelText: 'Full Name',
+                      labelText: 'Full Name *',
                       prefixIcon: Icon(LucideIcons.user),
                     ),
                     validator: (value) => value == null || value.isEmpty
                         ? 'Please enter a name'
                         : null,
                   ),
-                  if (!_isWeak) ...[
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: _category,
-                      icon: const Icon(LucideIcons.chevronDown),
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        prefixIcon: Icon(LucideIcons.users),
-                      ),
-                      items: _categories.map((cat) {
-                        return DropdownMenuItem(value: cat, child: Text(cat));
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _category = val);
-                        }
-                      },
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone Number',
+                      hintText: '+1 234 567 8900',
+                      prefixIcon: Icon(LucideIcons.phone),
                     ),
-                    if (_category == 'Family' || _category == 'Other') ...[
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _relationController,
-                        decoration: const InputDecoration(
-                          labelText: 'Specific Relation (Optional)',
-                          hintText: 'e.g. Brother, Sister, Manager',
-                          prefixIcon: Icon(LucideIcons.heartHandshake),
-                        ),
-                      ),
-                    ],
-                  ],
-                  if (_isWeak) ...[
-                    const SizedBox(height: 16),
-                    ref.watch(allPeopleProvider).when(
-                          data: (people) {
-                            final strongOthers = people
-                                .where((p) => p.id != (widget.personId ?? -1) && !p.isWeak)
-                                .toList();
-                            return DropdownButtonFormField<int>(
-                              initialValue: _intermediatePersonId,
-                              decoration: const InputDecoration(
-                                labelText: 'Intermediate Person',
-                                prefixIcon: Icon(LucideIcons.gitMerge),
-                              ),
-                              validator: (v) => _isWeak && v == null ? 'Selection required' : null,
-                              items: strongOthers.map((p) {
-                                return DropdownMenuItem(
-                                  value: p.id,
-                                  child: Text(p.name),
-                                );
-                              }).toList(),
-                              onChanged: (val) {
-                                setState(() {
-                                  _intermediatePersonId = val;
-                                });
-                              },
-                            );
-                          },
-                          loading: () => const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                          error: (_, _) => const SizedBox(),
-                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Email Address',
+                      hintText: 'alex@example.com',
+                      prefixIcon: Icon(LucideIcons.mail),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: _category,
+                    icon: const Icon(LucideIcons.chevronDown),
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      prefixIcon: Icon(LucideIcons.users),
+                    ),
+                    items: _categories.map((cat) {
+                      return DropdownMenuItem(value: cat, child: Text(cat));
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _category = val);
+                      }
+                    },
+                  ),
+                  if (_category == 'Family' || _category == 'Other') ...[
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _relationController,
                       decoration: const InputDecoration(
-                        labelText: 'Relation with Intermediate',
-                        hintText: 'e.g. Wife, Son, Friend',
+                        labelText: 'Specific Relation (Optional)',
+                        hintText: 'e.g. Brother, Sister, Manager',
                         prefixIcon: Icon(LucideIcons.heartHandshake),
                       ),
                     ),
                   ],
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: _birthday ?? DateTime.now(),
+                        firstDate: DateTime(1900),
+                        lastDate: DateTime.now(),
+                      );
+                      if (date != null) {
+                        setState(() => _birthday = date);
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Birthday (Optional)',
+                        prefixIcon: Icon(LucideIcons.calendar),
+                      ),
+                      child: Text(_birthday == null
+                          ? 'Select Date'
+                          : '${_birthday!.month}/${_birthday!.day}/${_birthday!.year}'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _notesController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes (Optional)',
+                      hintText: 'Add any background context, preferences, etc.',
+                      prefixIcon: Icon(LucideIcons.fileText),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -457,11 +520,12 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
                     runSpacing: 8,
                     children:
                         [
-                          (label: '1D', days: 1),
-                          (label: '1W', days: 7),
-                          (label: '2W', days: 14),
-                          (label: '1M', days: 30),
-                          (label: '3M', days: 90),
+                          (label: 'Weekly', days: 7),
+                          (label: '2 Weeks', days: 14),
+                          (label: 'Monthly', days: 30),
+                          (label: 'Quarterly', days: 90),
+                          (label: '6 Months', days: 180),
+                          (label: 'Yearly', days: 365),
                         ].map((preset) {
                           final isSelected =
                               _targetFrequencyDays == preset.days;
@@ -495,10 +559,10 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
                   ),
                   const SizedBox(height: 8),
                   Slider(
-                    value: _targetFrequencyDays.toDouble(),
+                    value: _targetFrequencyDays.clamp(1, 365).toDouble(),
                     min: 1,
-                    max: 90,
-                    divisions: 89,
+                    max: 365,
+                    divisions: 364,
                     label: formatTargetFrequency(_targetFrequencyDays),
                     onChanged: (value) {
                       setState(() {
