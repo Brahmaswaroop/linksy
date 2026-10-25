@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -14,6 +15,13 @@ import '../router/app_router.dart';
 import '../utils/contact_action_helper.dart';
 
 part 'notification_service.g.dart';
+
+enum NotificationType {
+  dailyDigest,
+  lowHealthAlert,
+  overdueNudge,
+  upcomingReminder
+}
 
 enum NotificationType {
   dailyDigest,
@@ -35,11 +43,28 @@ class NotificationService {
   static const _batteryChannel = MethodChannel('com.example.linksy/battery_optimization');
 
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
+  static final NotificationService _instance = NotificationService._internal();
+  factory NotificationService() => _instance;
+  NotificationService._internal();
+
+  static const _batteryChannel = MethodChannel('com.example.linksy/battery_optimization');
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = 
       FlutterLocalNotificationsPlugin();
 
   Future<void> init() async {
     // 1. Initialize Timezones
+  Future<void> init() async {
+    // 1. Initialize Timezones
     tz.initializeTimeZones();
+    final timezoneInfo = await FlutterTimezone.getLocalTimezone();
+    // flutter_timezone v5.0.1+ returns a TimezoneInfo object, we need the identifier
+    tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+
+    // 2. Initialize Native Settings
+    // Ensure you have an icon named 'ic_launcher' in your android/app/src/main/res/mipmap folders
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     final timezoneInfo = await FlutterTimezone.getLocalTimezone();
     // flutter_timezone v5.0.1+ returns a TimezoneInfo object, we need the identifier
     tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
@@ -52,12 +77,17 @@ class NotificationService {
     const DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
       requestAlertPermission: false, // We will request explicitly later
+    const DarwinInitializationSettings initializationSettingsDarwin =
+        DarwinInitializationSettings(
+      requestAlertPermission: false, // We will request explicitly later
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
 
     const InitializationSettings initializationSettings = InitializationSettings(
+    const InitializationSettings initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
       iOS: initializationSettingsDarwin,
     );
 
@@ -284,11 +314,17 @@ class NotificationService {
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       'linksy_test', 
       'Test Notifications', 
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'linksy_test', 
+      'Test Notifications', 
       channelDescription: 'Used for testing notification functionality',
       importance: Importance.max,
       priority: Priority.high,
     );
 
+    const NotificationDetails platformDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: DarwinNotificationDetails(),
     const NotificationDetails platformDetails = NotificationDetails(
       android: androidDetails,
       iOS: DarwinNotificationDetails(),
@@ -307,8 +343,22 @@ class NotificationService {
     return await flutterLocalNotificationsPlugin
             .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
             ?.canScheduleExactNotifications() ?? false;
+      notificationDetails: platformDetails,
+    );
   }
 
+  Future<bool> isExactAlarmPermissionGranted() async {
+    if (!Platform.isAndroid) return true;
+    return await flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+            ?.canScheduleExactNotifications() ?? false;
+  }
+
+  Future<void> requestExactAlarmPermission() async {
+    if (!Platform.isAndroid) return;
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestExactAlarmsPermission();
   Future<void> requestExactAlarmPermission() async {
     if (!Platform.isAndroid) return;
     await flutterLocalNotificationsPlugin
@@ -324,9 +374,24 @@ class NotificationService {
     } on PlatformException catch (e) {
       debugPrint("Failed to check battery optimization: '${e.message}'.");
       return true;
+  Future<bool> isBatteryOptimizationExempted() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final bool isExempted = await _batteryChannel.invokeMethod('isIgnoringBatteryOptimizations');
+      return isExempted;
+    } on PlatformException catch (e) {
+      debugPrint("Failed to check battery optimization: '${e.message}'.");
+      return true;
     }
   }
 
+  Future<void> requestBatteryOptimizationExemption() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _batteryChannel.invokeMethod('requestBatteryOptimizationExemption');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to request battery optimization exemption: '${e.message}'.");
+    }
   Future<void> requestBatteryOptimizationExemption() async {
     if (!Platform.isAndroid) return;
     try {
