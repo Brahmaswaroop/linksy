@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -7,6 +8,10 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:go_router/go_router.dart';
+import '../database/database.dart';
+import '../router/app_router.dart';
+import '../utils/contact_action_helper.dart';
 
 part 'notification_service.g.dart';
 
@@ -62,11 +67,47 @@ class NotificationService {
     );
   }
 
-  // Handle Deep Linking payload
-  void _onNotificationTap(NotificationResponse response) {
-    if (response.payload != null) {
-      debugPrint('Notification payload clicked: ${response.payload}');
-      // TODO: Route to Person Details screen using GoRouter/Navigator
+  // Handle Deep Linking & 1-Tap Notification Actions (Call & Done)
+  void _onNotificationTap(NotificationResponse response) async {
+    final payload = response.payload;
+    if (payload != null) {
+      debugPrint('Notification clicked with action: ${response.actionId}, payload: $payload');
+      final personId = int.tryParse(payload);
+      if (personId != null) {
+        if (response.actionId == 'done_action') {
+          // Log interaction immediately without opening app
+          final db = AppDatabase();
+          await db.into(db.interactions).insert(
+            InteractionsCompanion.insert(
+              personId: personId,
+              type: const Value('Call'),
+              notes: const Value('Marked done from notification'),
+              date: Value(DateTime.now()),
+            ),
+          );
+          await (db.update(db.people)..where((t) => t.id.equals(personId)))
+              .write(PeopleCompanion(lastInteractionDate: Value(DateTime.now())));
+          await db.close();
+          return;
+        }
+
+        if (response.actionId == 'call_action') {
+          // Look up contact phone and trigger dialer
+          final db = AppDatabase();
+          final person = await (db.select(db.people)..where((t) => t.id.equals(personId)))
+              .getSingleOrNull();
+          await db.close();
+
+          if (person?.phoneNumber != null && person!.phoneNumber!.isNotEmpty) {
+            await ContactActionHelper.call(person.phoneNumber!);
+            return;
+          }
+        }
+
+        if (rootNavigatorKey.currentContext != null) {
+          rootNavigatorKey.currentContext!.push('/people/$personId');
+        }
+      }
     }
   }
 
@@ -101,6 +142,18 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
+      actions: <AndroidNotificationAction>[
+        AndroidNotificationAction(
+          'call_action',
+          'Call',
+          showsUserInterface: true,
+        ),
+        AndroidNotificationAction(
+          'done_action',
+          'Mark Done',
+          cancelNotification: true,
+        ),
+      ],
     );
 
     const NotificationDetails platformDetails = NotificationDetails(
@@ -113,7 +166,7 @@ class NotificationService {
       title: 'Interaction Overdue!',
       body: 'You are $daysOverdue days overdue to check in with $personName.',
       notificationDetails: platformDetails,
-      payload: personId.toString(), // Payload for deep link
+      payload: personId.toString(), // Payload for deep link & action handlers
     );
   }
 
@@ -145,6 +198,44 @@ class NotificationService {
       notificationDetails: platformDetails,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time, // Repeats daily
+    );
+  }
+
+  Future<void> scheduleBirthdayReminder(int personId, String personName, DateTime birthday) async {
+    // ID Range: 300-399 for birthdays
+    final int notificationId = 300 + (personId % 100);
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'linksy_birthdays', // Channel ID
+      'Birthday Reminders', // Channel Name
+      channelDescription: 'Yearly reminders for birthdays',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+
+    const NotificationDetails platformDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: DarwinNotificationDetails(),
+    );
+
+    final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
+    tz.TZDateTime scheduledDate = tz.TZDateTime(
+        tz.local, now.year, birthday.month, birthday.day, 9, 0); // 9:00 AM
+
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = tz.TZDateTime(
+          tz.local, now.year + 1, birthday.month, birthday.day, 9, 0);
+    }
+
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      id: notificationId,
+      title: 'Birthday Reminder 🎂',
+      body: 'Today is $personName\'s birthday! Don\'t forget to wish them well.',
+      scheduledDate: scheduledDate,
+      notificationDetails: platformDetails,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.dateAndTime, // Match day and month yearly
+      payload: personId.toString(),
     );
   }
 

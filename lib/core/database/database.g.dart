@@ -138,6 +138,57 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _birthdayMeta = const VerificationMeta(
+    'birthday',
+  );
+  @override
+  late final GeneratedColumn<DateTime> birthday = GeneratedColumn<DateTime>(
+    'birthday',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+    'notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _phoneNumberMeta = const VerificationMeta(
+    'phoneNumber',
+  );
+  @override
+  late final GeneratedColumn<String> phoneNumber = GeneratedColumn<String>(
+    'phone_number',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _emailMeta = const VerificationMeta('email');
+  @override
+  late final GeneratedColumn<String> email = GeneratedColumn<String>(
+    'email',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _systemContactIdMeta = const VerificationMeta(
+    'systemContactId',
+  );
+  @override
+  late final GeneratedColumn<String> systemContactId = GeneratedColumn<String>(
+    'system_contact_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -151,6 +202,11 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
     averageGapDays,
     category,
     isWeak,
+    birthday,
+    notes,
+    phoneNumber,
+    email,
+    systemContactId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -241,6 +297,42 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
         isWeak.isAcceptableOrUnknown(data['is_weak']!, _isWeakMeta),
       );
     }
+    if (data.containsKey('birthday')) {
+      context.handle(
+        _birthdayMeta,
+        birthday.isAcceptableOrUnknown(data['birthday']!, _birthdayMeta),
+      );
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+        _notesMeta,
+        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
+      );
+    }
+    if (data.containsKey('phone_number')) {
+      context.handle(
+        _phoneNumberMeta,
+        phoneNumber.isAcceptableOrUnknown(
+          data['phone_number']!,
+          _phoneNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('email')) {
+      context.handle(
+        _emailMeta,
+        email.isAcceptableOrUnknown(data['email']!, _emailMeta),
+      );
+    }
+    if (data.containsKey('system_contact_id')) {
+      context.handle(
+        _systemContactIdMeta,
+        systemContactId.isAcceptableOrUnknown(
+          data['system_contact_id']!,
+          _systemContactIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -294,6 +386,26 @@ class $PeopleTable extends People with TableInfo<$PeopleTable, Person> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_weak'],
       )!,
+      birthday: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}birthday'],
+      ),
+      notes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notes'],
+      ),
+      phoneNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}phone_number'],
+      ),
+      email: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}email'],
+      ),
+      systemContactId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}system_contact_id'],
+      ),
     );
   }
 
@@ -323,6 +435,11 @@ class Person extends DataClass implements Insertable<Person> {
   /// E.g. 'Friend', 'Family', 'Colleague', 'Other'
   final String category;
   final bool isWeak;
+  final DateTime? birthday;
+  final String? notes;
+  final String? phoneNumber;
+  final String? email;
+  final String? systemContactId;
   const Person({
     required this.id,
     required this.name,
@@ -335,6 +452,11 @@ class Person extends DataClass implements Insertable<Person> {
     this.averageGapDays,
     required this.category,
     required this.isWeak,
+    this.birthday,
+    this.notes,
+    this.phoneNumber,
+    this.email,
+    this.systemContactId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -358,6 +480,21 @@ class Person extends DataClass implements Insertable<Person> {
     }
     map['category'] = Variable<String>(category);
     map['is_weak'] = Variable<bool>(isWeak);
+    if (!nullToAbsent || birthday != null) {
+      map['birthday'] = Variable<DateTime>(birthday);
+    }
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
+    if (!nullToAbsent || phoneNumber != null) {
+      map['phone_number'] = Variable<String>(phoneNumber);
+    }
+    if (!nullToAbsent || email != null) {
+      map['email'] = Variable<String>(email);
+    }
+    if (!nullToAbsent || systemContactId != null) {
+      map['system_contact_id'] = Variable<String>(systemContactId);
+    }
     return map;
   }
 
@@ -382,6 +519,21 @@ class Person extends DataClass implements Insertable<Person> {
           : Value(averageGapDays),
       category: Value(category),
       isWeak: Value(isWeak),
+      birthday: birthday == null && nullToAbsent
+          ? const Value.absent()
+          : Value(birthday),
+      notes: notes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notes),
+      phoneNumber: phoneNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(phoneNumber),
+      email: email == null && nullToAbsent
+          ? const Value.absent()
+          : Value(email),
+      systemContactId: systemContactId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(systemContactId),
     );
   }
 
@@ -406,6 +558,11 @@ class Person extends DataClass implements Insertable<Person> {
       averageGapDays: serializer.fromJson<double?>(json['averageGapDays']),
       category: serializer.fromJson<String>(json['category']),
       isWeak: serializer.fromJson<bool>(json['isWeak']),
+      birthday: serializer.fromJson<DateTime?>(json['birthday']),
+      notes: serializer.fromJson<String?>(json['notes']),
+      phoneNumber: serializer.fromJson<String?>(json['phoneNumber']),
+      email: serializer.fromJson<String?>(json['email']),
+      systemContactId: serializer.fromJson<String?>(json['systemContactId']),
     );
   }
   @override
@@ -423,6 +580,11 @@ class Person extends DataClass implements Insertable<Person> {
       'averageGapDays': serializer.toJson<double?>(averageGapDays),
       'category': serializer.toJson<String>(category),
       'isWeak': serializer.toJson<bool>(isWeak),
+      'birthday': serializer.toJson<DateTime?>(birthday),
+      'notes': serializer.toJson<String?>(notes),
+      'phoneNumber': serializer.toJson<String?>(phoneNumber),
+      'email': serializer.toJson<String?>(email),
+      'systemContactId': serializer.toJson<String?>(systemContactId),
     };
   }
 
@@ -438,6 +600,11 @@ class Person extends DataClass implements Insertable<Person> {
     Value<double?> averageGapDays = const Value.absent(),
     String? category,
     bool? isWeak,
+    Value<DateTime?> birthday = const Value.absent(),
+    Value<String?> notes = const Value.absent(),
+    Value<String?> phoneNumber = const Value.absent(),
+    Value<String?> email = const Value.absent(),
+    Value<String?> systemContactId = const Value.absent(),
   }) => Person(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -454,6 +621,13 @@ class Person extends DataClass implements Insertable<Person> {
         : this.averageGapDays,
     category: category ?? this.category,
     isWeak: isWeak ?? this.isWeak,
+    birthday: birthday.present ? birthday.value : this.birthday,
+    notes: notes.present ? notes.value : this.notes,
+    phoneNumber: phoneNumber.present ? phoneNumber.value : this.phoneNumber,
+    email: email.present ? email.value : this.email,
+    systemContactId: systemContactId.present
+        ? systemContactId.value
+        : this.systemContactId,
   );
   Person copyWithCompanion(PeopleCompanion data) {
     return Person(
@@ -478,6 +652,15 @@ class Person extends DataClass implements Insertable<Person> {
           : this.averageGapDays,
       category: data.category.present ? data.category.value : this.category,
       isWeak: data.isWeak.present ? data.isWeak.value : this.isWeak,
+      birthday: data.birthday.present ? data.birthday.value : this.birthday,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      phoneNumber: data.phoneNumber.present
+          ? data.phoneNumber.value
+          : this.phoneNumber,
+      email: data.email.present ? data.email.value : this.email,
+      systemContactId: data.systemContactId.present
+          ? data.systemContactId.value
+          : this.systemContactId,
     );
   }
 
@@ -494,7 +677,12 @@ class Person extends DataClass implements Insertable<Person> {
           ..write('relation: $relation, ')
           ..write('averageGapDays: $averageGapDays, ')
           ..write('category: $category, ')
-          ..write('isWeak: $isWeak')
+          ..write('isWeak: $isWeak, ')
+          ..write('birthday: $birthday, ')
+          ..write('notes: $notes, ')
+          ..write('phoneNumber: $phoneNumber, ')
+          ..write('email: $email, ')
+          ..write('systemContactId: $systemContactId')
           ..write(')'))
         .toString();
   }
@@ -512,6 +700,11 @@ class Person extends DataClass implements Insertable<Person> {
     averageGapDays,
     category,
     isWeak,
+    birthday,
+    notes,
+    phoneNumber,
+    email,
+    systemContactId,
   );
   @override
   bool operator ==(Object other) =>
@@ -527,7 +720,12 @@ class Person extends DataClass implements Insertable<Person> {
           other.relation == this.relation &&
           other.averageGapDays == this.averageGapDays &&
           other.category == this.category &&
-          other.isWeak == this.isWeak);
+          other.isWeak == this.isWeak &&
+          other.birthday == this.birthday &&
+          other.notes == this.notes &&
+          other.phoneNumber == this.phoneNumber &&
+          other.email == this.email &&
+          other.systemContactId == this.systemContactId);
 }
 
 class PeopleCompanion extends UpdateCompanion<Person> {
@@ -542,6 +740,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
   final Value<double?> averageGapDays;
   final Value<String> category;
   final Value<bool> isWeak;
+  final Value<DateTime?> birthday;
+  final Value<String?> notes;
+  final Value<String?> phoneNumber;
+  final Value<String?> email;
+  final Value<String?> systemContactId;
   const PeopleCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -554,6 +757,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     this.averageGapDays = const Value.absent(),
     this.category = const Value.absent(),
     this.isWeak = const Value.absent(),
+    this.birthday = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.phoneNumber = const Value.absent(),
+    this.email = const Value.absent(),
+    this.systemContactId = const Value.absent(),
   });
   PeopleCompanion.insert({
     this.id = const Value.absent(),
@@ -567,6 +775,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     this.averageGapDays = const Value.absent(),
     this.category = const Value.absent(),
     this.isWeak = const Value.absent(),
+    this.birthday = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.phoneNumber = const Value.absent(),
+    this.email = const Value.absent(),
+    this.systemContactId = const Value.absent(),
   }) : name = Value(name);
   static Insertable<Person> custom({
     Expression<int>? id,
@@ -580,6 +793,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     Expression<double>? averageGapDays,
     Expression<String>? category,
     Expression<bool>? isWeak,
+    Expression<DateTime>? birthday,
+    Expression<String>? notes,
+    Expression<String>? phoneNumber,
+    Expression<String>? email,
+    Expression<String>? systemContactId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -595,6 +813,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
       if (averageGapDays != null) 'average_gap_days': averageGapDays,
       if (category != null) 'category': category,
       if (isWeak != null) 'is_weak': isWeak,
+      if (birthday != null) 'birthday': birthday,
+      if (notes != null) 'notes': notes,
+      if (phoneNumber != null) 'phone_number': phoneNumber,
+      if (email != null) 'email': email,
+      if (systemContactId != null) 'system_contact_id': systemContactId,
     });
   }
 
@@ -610,6 +833,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     Value<double?>? averageGapDays,
     Value<String>? category,
     Value<bool>? isWeak,
+    Value<DateTime?>? birthday,
+    Value<String?>? notes,
+    Value<String?>? phoneNumber,
+    Value<String?>? email,
+    Value<String?>? systemContactId,
   }) {
     return PeopleCompanion(
       id: id ?? this.id,
@@ -623,6 +851,11 @@ class PeopleCompanion extends UpdateCompanion<Person> {
       averageGapDays: averageGapDays ?? this.averageGapDays,
       category: category ?? this.category,
       isWeak: isWeak ?? this.isWeak,
+      birthday: birthday ?? this.birthday,
+      notes: notes ?? this.notes,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      email: email ?? this.email,
+      systemContactId: systemContactId ?? this.systemContactId,
     );
   }
 
@@ -664,6 +897,21 @@ class PeopleCompanion extends UpdateCompanion<Person> {
     if (isWeak.present) {
       map['is_weak'] = Variable<bool>(isWeak.value);
     }
+    if (birthday.present) {
+      map['birthday'] = Variable<DateTime>(birthday.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (phoneNumber.present) {
+      map['phone_number'] = Variable<String>(phoneNumber.value);
+    }
+    if (email.present) {
+      map['email'] = Variable<String>(email.value);
+    }
+    if (systemContactId.present) {
+      map['system_contact_id'] = Variable<String>(systemContactId.value);
+    }
     return map;
   }
 
@@ -680,7 +928,12 @@ class PeopleCompanion extends UpdateCompanion<Person> {
           ..write('relation: $relation, ')
           ..write('averageGapDays: $averageGapDays, ')
           ..write('category: $category, ')
-          ..write('isWeak: $isWeak')
+          ..write('isWeak: $isWeak, ')
+          ..write('birthday: $birthday, ')
+          ..write('notes: $notes, ')
+          ..write('phoneNumber: $phoneNumber, ')
+          ..write('email: $email, ')
+          ..write('systemContactId: $systemContactId')
           ..write(')'))
         .toString();
   }
@@ -2015,6 +2268,11 @@ typedef $$PeopleTableCreateCompanionBuilder =
       Value<double?> averageGapDays,
       Value<String> category,
       Value<bool> isWeak,
+      Value<DateTime?> birthday,
+      Value<String?> notes,
+      Value<String?> phoneNumber,
+      Value<String?> email,
+      Value<String?> systemContactId,
     });
 typedef $$PeopleTableUpdateCompanionBuilder =
     PeopleCompanion Function({
@@ -2029,6 +2287,11 @@ typedef $$PeopleTableUpdateCompanionBuilder =
       Value<double?> averageGapDays,
       Value<String> category,
       Value<bool> isWeak,
+      Value<DateTime?> birthday,
+      Value<String?> notes,
+      Value<String?> phoneNumber,
+      Value<String?> email,
+      Value<String?> systemContactId,
     });
 
 final class $$PeopleTableReferences
@@ -2133,6 +2396,31 @@ class $$PeopleTableFilterComposer
 
   ColumnFilters<bool> get isWeak => $composableBuilder(
     column: $table.isWeak,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get birthday => $composableBuilder(
+    column: $table.birthday,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get phoneNumber => $composableBuilder(
+    column: $table.phoneNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get email => $composableBuilder(
+    column: $table.email,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get systemContactId => $composableBuilder(
+    column: $table.systemContactId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2250,6 +2538,31 @@ class $$PeopleTableOrderingComposer
     column: $table.isWeak,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get birthday => $composableBuilder(
+    column: $table.birthday,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get phoneNumber => $composableBuilder(
+    column: $table.phoneNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get email => $composableBuilder(
+    column: $table.email,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get systemContactId => $composableBuilder(
+    column: $table.systemContactId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PeopleTableAnnotationComposer
@@ -2303,6 +2616,25 @@ class $$PeopleTableAnnotationComposer
 
   GeneratedColumn<bool> get isWeak =>
       $composableBuilder(column: $table.isWeak, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get birthday =>
+      $composableBuilder(column: $table.birthday, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<String> get phoneNumber => $composableBuilder(
+    column: $table.phoneNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get email =>
+      $composableBuilder(column: $table.email, builder: (column) => column);
+
+  GeneratedColumn<String> get systemContactId => $composableBuilder(
+    column: $table.systemContactId,
+    builder: (column) => column,
+  );
 
   Expression<T> personLabelsRefs<T extends Object>(
     Expression<T> Function($$PersonLabelsTableAnnotationComposer a) f,
@@ -2394,6 +2726,11 @@ class $$PeopleTableTableManager
                 Value<double?> averageGapDays = const Value.absent(),
                 Value<String> category = const Value.absent(),
                 Value<bool> isWeak = const Value.absent(),
+                Value<DateTime?> birthday = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<String?> phoneNumber = const Value.absent(),
+                Value<String?> email = const Value.absent(),
+                Value<String?> systemContactId = const Value.absent(),
               }) => PeopleCompanion(
                 id: id,
                 name: name,
@@ -2406,6 +2743,11 @@ class $$PeopleTableTableManager
                 averageGapDays: averageGapDays,
                 category: category,
                 isWeak: isWeak,
+                birthday: birthday,
+                notes: notes,
+                phoneNumber: phoneNumber,
+                email: email,
+                systemContactId: systemContactId,
               ),
           createCompanionCallback:
               ({
@@ -2420,6 +2762,11 @@ class $$PeopleTableTableManager
                 Value<double?> averageGapDays = const Value.absent(),
                 Value<String> category = const Value.absent(),
                 Value<bool> isWeak = const Value.absent(),
+                Value<DateTime?> birthday = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<String?> phoneNumber = const Value.absent(),
+                Value<String?> email = const Value.absent(),
+                Value<String?> systemContactId = const Value.absent(),
               }) => PeopleCompanion.insert(
                 id: id,
                 name: name,
@@ -2432,6 +2779,11 @@ class $$PeopleTableTableManager
                 averageGapDays: averageGapDays,
                 category: category,
                 isWeak: isWeak,
+                birthday: birthday,
+                notes: notes,
+                phoneNumber: phoneNumber,
+                email: email,
+                systemContactId: systemContactId,
               ),
           withReferenceMapper: (p0) => p0
               .map(

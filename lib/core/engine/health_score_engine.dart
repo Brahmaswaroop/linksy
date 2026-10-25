@@ -73,6 +73,13 @@ class HealthScoreEngine {
         if (consistencyScore < 0.0) consistencyScore = 0.0;
       }
     }
+    
+    // Apply overdue decay to consistency score
+    if (daysOverdue > 0) {
+      double overdueDecayFactor = 1.0 - (daysOverdue / targetFrequencyDays);
+      if (overdueDecayFactor < 0.0) overdueDecayFactor = 0.0;
+      consistencyScore *= overdueDecayFactor;
+    }
 
     // 3. Priority Weight Score (20%)
     // Drops by specific % per overdue day based on priority (1=2%, 2=4%, 3=6%)
@@ -90,6 +97,12 @@ class HealthScoreEngine {
         (0.2 * priorityScore);
 
     int baseScore = rawBaseScore.toInt();
+    
+    // Severe overdue multiplier: 0% base score when >= 2x targetFrequencyDays
+    if (daysOverdue >= 2 * targetFrequencyDays) {
+      baseScore = 0;
+    }
+
     if (baseScore > 100) baseScore = 100;
     if (baseScore < 0) baseScore = 0;
 

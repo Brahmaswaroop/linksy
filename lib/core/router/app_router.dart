@@ -5,27 +5,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../features/dashboard/dashboard_screen.dart';
-import '../../features/graph/graph_screen.dart';
 import '../../features/people/people_screen.dart';
 import '../../features/people/add_person_screen.dart';
 import '../../features/person_detail/person_detail_screen.dart';
+import '../../features/analytics/analytics_screen.dart';
 import '../../features/interactions/log_interaction_screen.dart';
 import '../../features/settings/settings_screen.dart';
 
 part 'app_router.g.dart';
 
-final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'root',
 );
 final GlobalKey<NavigatorState> _shellNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'shell',
 );
 
+final initialLocationProvider = StateProvider<String>((ref) => '/dashboard');
+
 @riverpod
 GoRouter goRouter(Ref ref) {
+  final initialLocation = ref.watch(initialLocationProvider);
   return GoRouter(
-    navigatorKey: _rootNavigatorKey,
-    initialLocation: '/dashboard',
+    navigatorKey: rootNavigatorKey,
+    initialLocation: initialLocation,
     routes: [
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
@@ -43,14 +46,7 @@ GoRouter goRouter(Ref ref) {
             routes: [
               GoRoute(
                 path: 'add',
-                builder: (context, state) {
-                  final linkToPersonIdStr =
-                      state.uri.queryParameters['linkToPersonId'];
-                  final linkToPersonId = linkToPersonIdStr != null
-                      ? int.tryParse(linkToPersonIdStr)
-                      : null;
-                  return AddPersonScreen(linkToPersonId: linkToPersonId);
-                },
+                builder: (context, state) => const AddPersonScreen(),
               ),
               GoRoute(
                 path: ':id',
@@ -78,8 +74,8 @@ GoRouter goRouter(Ref ref) {
             ],
           ),
           GoRoute(
-            path: '/graph',
-            builder: (context, state) => const GraphScreen(),
+            path: '/analytics',
+            builder: (context, state) => const AnalyticsScreen(),
           ),
         ],
       ),
@@ -121,25 +117,25 @@ class AppShell extends StatelessWidget {
                 context.go('/people');
                 break;
               case 2:
-                context.go('/graph');
+                context.go('/analytics');
                 break;
             }
           },
           destinations: const [
             NavigationDestination(
-              icon: Icon(LucideIcons.layoutDashboard),
-              selectedIcon: Icon(LucideIcons.layoutDashboard),
-              label: 'Dashboard',
+              icon: Icon(LucideIcons.bell),
+              selectedIcon: Icon(LucideIcons.bellRing),
+              label: 'Reminders',
             ),
             NavigationDestination(
               icon: Icon(LucideIcons.users),
               selectedIcon: Icon(LucideIcons.users),
-              label: 'People',
+              label: 'Contacts',
             ),
             NavigationDestination(
-              icon: Icon(LucideIcons.network),
-              selectedIcon: Icon(LucideIcons.network),
-              label: 'Network',
+              icon: Icon(LucideIcons.barChart2),
+              selectedIcon: Icon(LucideIcons.barChart2),
+              label: 'Insights',
             ),
           ],
         ),
@@ -155,7 +151,7 @@ class AppShell extends StatelessWidget {
     if (location.startsWith('/people')) {
       return 1;
     }
-    if (location.startsWith('/graph')) {
+    if (location.startsWith('/analytics')) {
       return 2;
     }
     return 0;

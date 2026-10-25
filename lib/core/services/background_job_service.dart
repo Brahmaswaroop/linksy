@@ -1,8 +1,12 @@
+import 'dart:io';
+import 'package:call_log/call_log.dart';
 import 'package:drift/drift.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../database/database.dart';
 import '../engine/health_score_engine.dart';
+import 'call_log_sync_service.dart';
 import 'notification_service.dart';
 
 @pragma('vm:entry-point')
@@ -16,7 +20,65 @@ void callbackDispatcher() {
       final people = await db.select(db.people).get();
       if (people.isEmpty) return Future.value(true);
 
-      // 3. Health Score iteration
+      // 3. Background Call Log Sync on Android
+      if (Platform.isAndroid) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final lastSyncMillis = prefs.getInt('last_call_log_sync_timestamp') ??
+              DateTime.now()
+                  .subtract(const Duration(days: 7))
+                  .millisecondsSinceEpoch;
+
+          final entries = await CallLog.query(dateFrom: lastSyncMillis);
+          final peopleWithPhones = people
+              .where((p) => p.phoneNumber != null && p.phoneNumber!.trim().isNotEmpty)
+              .toList();
+
+          if (entries.isNotEmpty && peopleWithPhones.isNotEmpty) {
+            for (final entry in entries) {
+              final entryNumber = entry.number;
+              final timestamp = entry.timestamp;
+              final duration = entry.duration ?? 0;
+              final callType = entry.callType;
+
+              if (entryNumber == null || timestamp == null) continue;
+
+              final isMeaningful = (callType == CallType.outgoing && duration > 0) ||
+                  (callType == CallType.incoming && duration >= 10);
+              if (!isMeaningful) continue;
+
+              final callDate = DateTime.fromMillisecondsSinceEpoch(timestamp);
+
+              for (final person in peopleWithPhones) {
+                if (CallLogSyncService.numbersMatch(person.phoneNumber!, entryNumber)) {
+                  final lastDate = person.lastInteractionDate;
+                  if (lastDate == null || callDate.isAfter(lastDate)) {
+                    await db.into(db.interactions).insert(
+                      InteractionsCompanion.insert(
+                        personId: person.id,
+                        type: const Value('Call'),
+                        notes: Value('Background call sync: ${callType?.name ?? 'call'} (${duration}s)'),
+                        date: Value(callDate),
+                      ),
+                    );
+                    await (db.update(db.people)..where((t) => t.id.equals(person.id)))
+                        .write(PeopleCompanion(lastInteractionDate: Value(callDate)));
+                  }
+                  break;
+                }
+              }
+            }
+            await prefs.setInt(
+              'last_call_log_sync_timestamp',
+              DateTime.now().millisecondsSinceEpoch,
+            );
+          }
+        } catch (_) {
+          // ignore background call log sync error
+        }
+      }
+
+      // 4. Health Score iteration
       final engine = HealthScoreEngine();
       final List<Map<String, dynamic>> overduePeople = [];
 

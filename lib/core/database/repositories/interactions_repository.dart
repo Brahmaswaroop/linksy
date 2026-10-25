@@ -75,6 +75,19 @@ class InteractionsRepository {
     });
   }
 
+  Future<bool> hasInteractionNearDate(int personId, DateTime date) async {
+    final start = date.subtract(const Duration(minutes: 2));
+    final end = date.add(const Duration(minutes: 2));
+    final query = _db.select(_db.interactions)
+      ..where((t) =>
+          t.personId.equals(personId) &
+          t.date.isBiggerOrEqualValue(start) &
+          t.date.isSmallerOrEqualValue(end))
+      ..limit(1);
+    final results = await query.get();
+    return results.isNotEmpty;
+  }
+
   Future<int> logInteraction(InteractionsCompanion interaction) async {
     return await _db.transaction(() async {
       // Insert interaction

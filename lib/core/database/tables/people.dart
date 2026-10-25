@@ -25,4 +25,10 @@ class People extends Table {
   TextColumn get category => text().withDefault(const Constant('Other'))();
 
   BoolColumn get isWeak => boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get birthday => dateTime().nullable()();
+  TextColumn get notes => text().nullable()();
+  TextColumn get phoneNumber => text().nullable()();
+  TextColumn get email => text().nullable()();
+  TextColumn get systemContactId => text().nullable()();
 }
