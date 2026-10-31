@@ -1,15 +1,16 @@
 import 'dart:io';
-import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/database/database.dart';
-import '../../../core/database/repositories/interactions_repository.dart';
 import '../../../core/database/repositories/labels_repository.dart';
 import '../../../core/engine/health_score_engine.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/neo_palette.dart';
 import '../../../core/utils/contact_action_helper.dart';
 
 class PersonCard extends ConsumerWidget {
@@ -32,299 +33,417 @@ class PersonCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final hColor = healthColor(status.baseScore);
+    final avatarBg = avatarColorFromName(person.name);
+    final score = status.baseScore;
+    final isOverdue = status.daysOverdue > 0;
+    final isDueToday = status.daysOverdue == 0;
     final labelsAsync = ref.watch(labelsForPersonProvider(person.id));
 
-    final lastContactStr = person.lastInteractionDate == null
-        ? 'Never contacted'
-        : 'Last: ${timeago.format(person.lastInteractionDate!)}';
-
-    String followUpStr;
-    Color followUpColor = cs.onSurface.withValues(alpha: 0.6);
-    if (status.daysOverdue > 0) {
-      followUpStr = 'Overdue by ${status.daysOverdue}d';
-      followUpColor = Colors.redAccent.shade700;
-    } else if (status.daysOverdue < 0) {
-      followUpStr = 'Due in ${status.daysOverdue.abs()}d';
-    } else {
-      followUpStr = 'Due today';
-      followUpColor = Colors.orange.shade800;
+    String lastContactStr = 'Never';
+    if (person.lastInteractionDate != null) {
+      lastContactStr = timeago.format(person.lastInteractionDate!, locale: 'en_short');
     }
 
-    final hasPhone = person.phoneNumber != null && person.phoneNumber!.trim().isNotEmpty;
+    String nextDueStr;
+    if (isOverdue) {
+      nextDueStr = '${status.daysOverdue}d overdue';
+    } else if (isDueToday) {
+      nextDueStr = 'Due Today';
+    } else {
+      nextDueStr = 'in ${status.daysOverdue.abs()}d';
+    }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: isSelected
-                    ? cs.primary
-                    : cs.outlineVariant.withValues(alpha: 0.45),
-                width: isSelected ? 2 : 1,
-              ),
-              color: isSelected ? cs.primaryContainer.withValues(alpha: 0.35) : null,
-            ),
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (isSelectionMode)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12, top: 10),
-                        child: Checkbox(
-                          value: isSelected,
-                          onChanged: (_) => onTap(),
-                        ),
-                      ),
-                    // ── 1) Photo / Avatar ────────
-                    Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 28,
-                          backgroundColor: avatarColorFromName(person.name),
-                          backgroundImage: person.avatarPath != null
-                              ? FileImage(File(person.avatarPath!))
-                              : null,
-                          child: person.avatarPath == null
-                              ? Text(
-                                  person.name.isNotEmpty
-                                      ? person.name[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 22,
-                                  ),
-                                )
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            width: 14,
-                            height: 14,
-                            decoration: BoxDecoration(
-                              color: hColor,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: cs.surface, width: 2.2),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? NeoPalette.skyBg.withValues(alpha: 0.5)
+              : NeoPalette.surfaceWhite,
+          borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+          border: Border.all(
+            color: isSelected ? NeoPalette.skyText : NeoPalette.cardBorder,
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: NeoPalette.shadowCard,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── 1. Top Row: Avatar + Name + Category + Favorite ────────
+                  Row(
+                    children: [
+                      if (isSelectionMode)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: Checkbox(
+                            value: isSelected,
+                            onChanged: (_) => onTap(),
+                            activeColor: NeoPalette.inkBlack,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(width: 14),
+                      // Avatar
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: avatarBg,
+                        backgroundImage: person.avatarPath != null
+                            ? FileImage(File(person.avatarPath!))
+                            : null,
+                        child: person.avatarPath == null
+                            ? Text(
+                                person.name.isNotEmpty
+                                    ? person.name[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      // Name & Relation
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              person.name,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: NeoPalette.textPrimary,
+                                letterSpacing: -0.3,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              person.relation != null &&
+                                      person.relation!.isNotEmpty
+                                  ? '${person.category} • ${person.relation}'
+                                  : person.category,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: NeoPalette.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Priority / Due Tag
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isOverdue || isDueToday
+                              ? NeoPalette.peachBg
+                              : NeoPalette.mintBg,
+                          borderRadius:
+                              BorderRadius.circular(NeoPalette.radiusPill),
+                          border: Border.all(
+                            color: isOverdue || isDueToday
+                                ? NeoPalette.peachBorder
+                                : NeoPalette.mintBorder,
+                          ),
+                        ),
+                        child: Text(
+                          nextDueStr,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isOverdue || isDueToday
+                                ? NeoPalette.peachText
+                                : NeoPalette.mintText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
 
-                    // ── 2) Info Stream ────────
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Name & Category
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  person.name,
-                                  style: tt.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.2,
-                                    height: 1.15,
-                                  ),
+                  // Optional Labels / Tags
+                  labelsAsync.when(
+                    data: (labels) {
+                      if (labels.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: labels.map((l) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: NeoPalette.lavenderBg,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: NeoPalette.lavenderBorder,
                                 ),
                               ),
-                              if (person.category.isNotEmpty) ...[
+                              child: Text(
+                                l.name,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: NeoPalette.lavenderText,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (err, stack) => const SizedBox.shrink(),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── 2. Transit Journey Timeline Row (Origin ───✈️─── Destination) ──
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: NeoPalette.canvasLight,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Left: Last Contact
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'LAST CONTACT',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: NeoPalette.textMuted,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              lastContactStr,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: NeoPalette.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Middle: Dashed Transit Line with Central Pill
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CustomPaint(
+                                  size: const Size(double.infinity, 2),
+                                  painter: _DashedLinePainter(
+                                    color: NeoPalette.cardBorder,
+                                  ),
+                                ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
-                                    vertical: 3,
+                                    vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: colorForCategory(person.category),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    person.relation != null &&
-                                            person.relation!.isNotEmpty
-                                        ? '${person.category} • ${person.relation}'
-                                        : person.category,
-                                    style: tt.labelSmall?.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 10,
-                                      letterSpacing: 0.3,
+                                    color: NeoPalette.surfaceWhite,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: NeoPalette.cardBorder,
                                     ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        LucideIcons.repeat,
+                                        size: 10,
+                                        color: NeoPalette.skyText,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${person.targetFrequencyDays}d',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: NeoPalette.skyText,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
-                            ],
+                            ),
                           ),
-
-                          const SizedBox(height: 6),
-
-                          // Tags/Labels
-                          labelsAsync.when(
-                            data: (labels) {
-                              if (labels.isEmpty) return const SizedBox.shrink();
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: labels.map((l) {
-                                    final colorStr =
-                                        l.colorHex.replaceAll('#', '');
-                                    final color = Color(
-                                      int.parse(colorStr, radix: 16) + 0xFF000000,
-                                    );
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: color.withValues(alpha: 0.25),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        l.name,
-                                        style: tt.labelSmall?.copyWith(
-                                          color: color.withValues(alpha: 0.95),
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              );
-                            },
-                            loading: () => const SizedBox.shrink(),
-                            error: (err, stack) => const SizedBox.shrink(),
-                          ),
-
-                          // Dates
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  lastContactStr,
-                                  style: tt.bodySmall?.copyWith(
-                                    color: cs.onSurface.withValues(alpha: 0.5),
-                                    fontSize: 11.5,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                        ),
+                        // Right: Status Health %
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'HEALTH SCORE',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: NeoPalette.textMuted,
+                                letterSpacing: 0.5,
                               ),
-                              Text(
-                                followUpStr,
-                                style: tt.bodySmall?.copyWith(
-                                  color: followUpColor,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 11.5,
-                                ),
-                                textAlign: TextAlign.right,
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 6),
-
-                          // Health Bar
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: status.progressPercent,
-                                    minHeight: 5,
-                                    backgroundColor: cs.onSurface.withValues(
-                                      alpha: 0.08,
-                                    ),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      hColor,
-                                    ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: healthColor(score),
+                                    shape: BoxShape.circle,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${status.baseScore}%',
-                                style: tt.labelSmall?.copyWith(
-                                  color: hColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 11,
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$score%',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: NeoPalette.textPrimary,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
 
-                // ── Quick Actions Row (Call, SMS, WhatsApp, Quick Log) ──
-                const SizedBox(height: 10),
-                Divider(
-                  height: 1,
-                  thickness: 0.8,
-                  color: cs.outlineVariant.withValues(alpha: 0.3),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (hasPhone) ...[
-                      _ActionIconButton(
-                        icon: LucideIcons.phone,
-                        tooltip: 'Call',
-                        color: const Color(0xFF2563EB),
-                        bgColor: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                        onTap: () => ContactActionHelper.call(person.phoneNumber!),
+                  const SizedBox(height: 14),
+
+                  // ── 3. Bottom Row: Quick Action Chips & Pitch-Black Button ─
+                  Row(
+                    children: [
+                      // Quick Channel Call / WhatsApp Icons
+                      if (person.phoneNumber != null &&
+                          person.phoneNumber!.trim().isNotEmpty) ...[
+                        _CircleActionBtn(
+                          icon: LucideIcons.phone,
+                          tooltip: 'Call',
+                          color: NeoPalette.skyText,
+                          bgColor: NeoPalette.skyBg,
+                          onTap: () =>
+                              ContactActionHelper.call(person.phoneNumber!),
+                        ),
+                        const SizedBox(width: 6),
+                        _CircleActionBtn(
+                          icon: LucideIcons.messageCircle,
+                          tooltip: 'WhatsApp',
+                          color: const Color(0xFF16A34A),
+                          bgColor: const Color(0xFFDCFCE7),
+                          onTap: () => ContactActionHelper.openWhatsApp(
+                            person.phoneNumber!,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      // Energy Vibe Tag
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: NeoPalette.lavenderBg,
+                          borderRadius:
+                              BorderRadius.circular(NeoPalette.radiusPill),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('⚡', style: TextStyle(fontSize: 10)),
+                            const SizedBox(width: 3),
+                            Text(
+                              person.priorityLevel == 3
+                                  ? 'VIP Bond'
+                                  : 'Regular',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: NeoPalette.lavenderText,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      _ActionIconButton(
-                        icon: LucideIcons.messageSquare,
-                        tooltip: 'Message',
-                        color: const Color(0xFF0D9488),
-                        bgColor: const Color(0xFF0D9488).withValues(alpha: 0.1),
-                        onTap: () => ContactActionHelper.sms(person.phoneNumber!),
-                      ),
-                      const SizedBox(width: 8),
-                      _ActionIconButton(
-                        icon: LucideIcons.messageCircle,
-                        tooltip: 'WhatsApp',
-                        color: const Color(0xFF16A34A),
-                        bgColor: const Color(0xFF16A34A).withValues(alpha: 0.1),
-                        onTap: () =>
-                            ContactActionHelper.openWhatsApp(person.phoneNumber!),
+                      const Spacer(),
+                      // High-Contrast Pitch Black Pill Button: [ Log Note ]
+                      InkWell(
+                        onTap: () => context.go('/people/${person.id}/log'),
+                        borderRadius:
+                            BorderRadius.circular(NeoPalette.radiusPill),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: NeoPalette.inkBlack,
+                            borderRadius:
+                                BorderRadius.circular(NeoPalette.radiusPill),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                LucideIcons.plus,
+                                size: 13,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Log Note',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
-                    const Spacer(),
-                    _QuickCheckInPill(person: person),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -333,14 +452,14 @@ class PersonCard extends ConsumerWidget {
   }
 }
 
-class _ActionIconButton extends StatelessWidget {
+class _CircleActionBtn extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final Color color;
   final Color bgColor;
   final VoidCallback onTap;
 
-  const _ActionIconButton({
+  const _CircleActionBtn({
     required this.icon,
     required this.tooltip,
     required this.color,
@@ -354,13 +473,15 @@ class _ActionIconButton extends StatelessWidget {
       message: tooltip,
       child: Material(
         color: bgColor,
-        borderRadius: BorderRadius.circular(10),
+        shape: const CircleBorder(),
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          customBorder: const CircleBorder(),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Icon(icon, size: 16, color: color),
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            child: Icon(icon, size: 14, color: color),
           ),
         ),
       ),
@@ -368,63 +489,30 @@ class _ActionIconButton extends StatelessWidget {
   }
 }
 
-class _QuickCheckInPill extends ConsumerWidget {
-  final Person person;
-  const _QuickCheckInPill({required this.person});
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  const _DashedLinePainter({required this.color});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2;
 
-    return Material(
-      color: cs.primary.withValues(alpha: 0.08),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () async {
-          final repo = ref.read(interactionsRepositoryProvider);
-          await repo.logInteraction(
-            InteractionsCompanion.insert(
-              personId: person.id,
-              type: const Value('Call'),
-              notes: const Value('Quick check-in'),
-              date: Value(DateTime.now()),
-            ),
-          );
+    const dashWidth = 3.5;
+    const dashSpace = 2.5;
+    double startX = 0;
 
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Logged interaction with ${person.name}'),
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 2),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            );
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(LucideIcons.checkCheck, size: 14, color: cs.primary),
-              const SizedBox(width: 6),
-              Text(
-                'Mark Contacted',
-                style: tt.labelSmall?.copyWith(
-                  color: cs.primary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    while (startX < size.width) {
+      canvas.drawLine(
+        Offset(startX, size.height / 2),
+        Offset(startX + dashWidth, size.height / 2),
+        paint,
+      );
+      startX += dashWidth + dashSpace;
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

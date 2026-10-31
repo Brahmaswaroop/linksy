@@ -407,7 +407,7 @@ class _BulkImportSheetState extends ConsumerState<BulkImportSheet> {
                           )
                         : ListView.separated(
                             itemCount: filtered.length,
-                            separatorBuilder: (_, __) =>
+                            separatorBuilder: (_, _) =>
                                 const Divider(height: 1, indent: 68),
                             itemBuilder: (context, index) {
                               final contact = filtered[index];

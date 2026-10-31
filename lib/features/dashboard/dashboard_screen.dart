@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
+
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/interactions_repository.dart';
 import '../../core/engine/health_score_engine.dart';
 import '../../core/database/database.dart';
 import '../../core/services/call_log_sync_service.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/contact_action_helper.dart';
+import '../../core/theme/neo_palette.dart';
 import '../people/widgets/bulk_import_sheet.dart';
+import 'widgets/neo_dashboard_widgets.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -22,6 +25,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _isSyncing = false;
+  String? _selectedCategory;
 
   void _openBulkImportSheet() {
     showModalBottomSheet(
@@ -39,7 +43,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       _syncCallLogs(showFeedback: false);
       final people = await ref.read(peopleRepositoryProvider).getAllPeople();
       final prefs = await SharedPreferences.getInstance();
-      final hasSeenPrompt = prefs.getBool('has_prompted_contacts_onboarding') ?? false;
+      final hasSeenPrompt =
+          prefs.getBool('has_prompted_contacts_onboarding') ?? false;
       if (people.isEmpty && !hasSeenPrompt && mounted) {
         await prefs.setBool('has_prompted_contacts_onboarding', true);
         _openBulkImportSheet();
@@ -75,230 +80,418 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
   }
 
+  void _showKarmaDialog(int points, int strongBonds) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+          ),
+          backgroundColor: NeoPalette.surfaceWhite,
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF97316),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.star_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Relationship Karma',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                  color: NeoPalette.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You have $points Karma Points!',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  color: NeoPalette.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Karma reflects your relationship consistency. Earn points by logging interactions on time and keeping bonds in the green zone ($strongBonds strong bonds currently active).',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: NeoPalette.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Keep Going 🚀',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  color: NeoPalette.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final peopleAsync = ref.watch(allPeopleProvider);
     final engine = ref.watch(healthScoreEngineProvider);
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Linksy',
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          IconButton(
-            icon: _isSyncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(LucideIcons.refreshCw),
-            tooltip: 'Sync Call History',
-            onPressed: () => _syncCallLogs(showFeedback: true),
-          ),
-          IconButton(
-            icon: const Icon(LucideIcons.settings),
-            onPressed: () => context.push('/settings'),
-            tooltip: 'Settings',
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: peopleAsync.when(
-        data: (people) {
-          int strong = 0;
-          int neutral = 0;
-          int fading = 0;
+      backgroundColor: NeoPalette.canvasLight,
+      body: SafeArea(
+        child: peopleAsync.when(
+          data: (people) {
+            int strong = 0;
+            int neutral = 0;
+            int fading = 0;
 
-          final needsAttention = <Map<String, dynamic>>[];
+            final categoryCounts = <String, int>{};
+            final overdueCounts = <String, int>{};
+            final needsAttention = <Map<String, dynamic>>[];
 
-          for (final person in people) {
-            final status = engine.calculateHealth(
-              targetFrequencyDays: person.targetFrequencyDays,
-              lastInteractionDate: person.lastInteractionDate,
-              priorityLevel: person.priorityLevel,
-              averageGapDays: person.averageGapDays,
-              createdAt: person.createdAt,
-            );
+            for (final person in people) {
+              final status = engine.calculateHealth(
+                targetFrequencyDays: person.targetFrequencyDays,
+                lastInteractionDate: person.lastInteractionDate,
+                priorityLevel: person.priorityLevel,
+                averageGapDays: person.averageGapDays,
+                createdAt: person.createdAt,
+              );
 
-            if (status.statusEmoji == '🟢') {
-              strong++;
-            } else if (status.statusEmoji == '🟡') {
-              neutral++;
-            } else {
-              fading++;
+              // Category count
+              final cat = person.category.isNotEmpty ? person.category : 'Other';
+              categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+
+              if (status.statusEmoji == '🟢') {
+                strong++;
+              } else if (status.statusEmoji == '🟡') {
+                neutral++;
+              } else {
+                fading++;
+                overdueCounts[cat] = (overdueCounts[cat] ?? 0) + 1;
+              }
+
+              // Filter needs attention
+              final isOverdueOrUpcoming =
+                  status.statusEmoji == '🔴' || status.daysOverdue >= -2;
+              if (isOverdueOrUpcoming) {
+                if (_selectedCategory == null ||
+                    person.category.toLowerCase() ==
+                        _selectedCategory!.toLowerCase()) {
+                  needsAttention.add({'person': person, 'status': status});
+                }
+              }
             }
 
-            if (status.statusEmoji == '🔴' || status.daysOverdue >= -2) {
-              needsAttention.add({'person': person, 'status': status});
-            }
-          }
+            // Sort needs attention: highest overdue first
+            needsAttention.sort((a, b) {
+              final statusA = a['status'] as RelationshipTargetStatus;
+              final statusB = b['status'] as RelationshipTargetStatus;
+              final cmp = statusB.daysOverdue.compareTo(statusA.daysOverdue);
+              if (cmp != 0) return cmp;
+              return statusB.totalScoreWithPriority.compareTo(
+                statusA.totalScoreWithPriority,
+              );
+            });
 
-          needsAttention.sort((a, b) {
-            final statusA = a['status'] as RelationshipTargetStatus;
-            final statusB = b['status'] as RelationshipTargetStatus;
-            // Most overdue first; break ties by priority score
-            final cmp = statusB.daysOverdue.compareTo(statusA.daysOverdue);
-            if (cmp != 0) return cmp;
-            return statusB.totalScoreWithPriority.compareTo(
-              statusA.totalScoreWithPriority,
-            );
-          });
+            final total = people.length;
+            final strongRatio = total == 0 ? 0.0 : strong / total;
+            final karma = (strong * 40) + (neutral * 15) + (total * 10);
 
-          final total = people.length;
-          final strongRatio = total == 0 ? 0.0 : strong / total;
-
-          return RefreshIndicator(
-            onRefresh: () => _syncCallLogs(showFeedback: true),
-            child: CustomScrollView(
-            slivers: [
-              // ── Gradient Health Header ──────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: _HealthHeaderCard(
-                    strong: strong,
-                    neutral: neutral,
-                    fading: fading,
-                    total: total,
-                    strongRatio: strongRatio,
+            return RefreshIndicator(
+              onRefresh: () => _syncCallLogs(showFeedback: true),
+              child: CustomScrollView(
+                slivers: [
+                  // ── 1. Neo Top Bar (Karma Points, Search, Sync, Settings) ──
+                  SliverToBoxAdapter(
+                    child: NeoTopBar(
+                      karmaPoints: karma,
+                      isSyncing: _isSyncing,
+                      onSync: () => _syncCallLogs(showFeedback: true),
+                      onSearch: () => context.go('/people'),
+                      onSettings: () => context.push('/settings'),
+                      onKarmaTap: () => _showKarmaDialog(karma, strong),
+                    ),
                   ),
-                ),
-              ),
 
-              // ── Section Header ──────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 3,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Needs Attention',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (needsAttention.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.errorContainer,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${needsAttention.length}',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colorScheme.onErrorContainer,
-                              fontWeight: FontWeight.w700,
+                  // ── 2. Hero Headline (Relationships Made Effortless) ─────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Relationships\nMade Effortless',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              color: NeoPalette.textPrimary,
+                              height: 1.15,
+                              letterSpacing: -0.6,
                             ),
                           ),
-                        ),
-                    ],
+                          const SizedBox(height: 6),
+                          Text(
+                            'Nurture your circle with zero friction.',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: NeoPalette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+
+                  // ── 3. Pastel Category Bento Pills ──────────────────────────
+                  SliverToBoxAdapter(
+                    child: NeoCategoryRow(
+                      selectedCategory: _selectedCategory,
+                      onSelectCategory: (cat) {
+                        setState(() => _selectedCategory = cat);
+                      },
+                      categoryCounts: categoryCounts,
+                      overdueCounts: overdueCounts,
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                  // ── 4. Priority Reconnects Section Header ────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'Priority Reconnects',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: NeoPalette.textPrimary,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              if (_selectedCategory != null) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: NeoPalette.mintBg,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    _selectedCategory!,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: NeoPalette.mintText,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          TextButton(
+                            onPressed: () => context.go('/people'),
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                            ),
+                            child: Text(
+                              'View All',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: NeoPalette.skyText,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+
+                  // ── 5. Horizontal Reconnect Ticket Cards (Transit Style) ────
+                  if (people.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                        child: _WelcomeEmptyDashboardCard(
+                          onImport: _openBulkImportSheet,
+                        ),
+                      ),
+                    )
+                  else if (needsAttention.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: NeoPalette.surfaceWhite,
+                          borderRadius:
+                              BorderRadius.circular(NeoPalette.radiusCard),
+                          border: Border.all(color: NeoPalette.cardBorder),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: const BoxDecoration(
+                                color: NeoPalette.mintBg,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                LucideIcons.checkCheck,
+                                color: NeoPalette.mintText,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'All bonds are caught up! 🎉',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: NeoPalette.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _selectedCategory != null
+                                        ? 'No overdue contacts in $_selectedCategory'
+                                        : 'Every relationship in your network is healthy.',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12,
+                                      color: NeoPalette.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 215,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: needsAttention.length,
+                          itemBuilder: (context, index) {
+                            final item = needsAttention[index];
+                            final person = item['person'] as Person;
+                            final status =
+                                item['status'] as RelationshipTargetStatus;
+                            return NeoReconnectTicketCard(
+                              person: person,
+                              status: status,
+                              onTap: () => context.go('/people/${person.id}'),
+                              onLog: () =>
+                                  context.go('/people/${person.id}/log'),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+                  // ── 6. Conversation Sparks Section (Recommendations) ────────
+                  SliverToBoxAdapter(
+                    child: NeoConversationSparksSection(
+                      people: people,
+                      onOpenPerson: (person) {
+                        context.go('/people/${person.id}');
+                      },
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+                  // ── 7. Network Health Bento Pulse ────────────────────────────
+                  SliverToBoxAdapter(
+                    child: NeoHealthPulseCard(
+                      strong: strong,
+                      neutral: neutral,
+                      fading: fading,
+                      total: total,
+                      strongRatio: strongRatio,
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 8)),
+
+                  // ── 8. Recently Contacted Section ────────────────────────────
+                  SliverToBoxAdapter(child: _RecentlyContactedSection()),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                ],
               ),
-
-              // ── Needs Attention List ────────────────────────────────────
-              if (people.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    child: _WelcomeEmptyDashboardCard(
-                      onImport: _openBulkImportSheet,
-                    ),
-                  ),
-                )
-              else if (needsAttention.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(40.0),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: const Color(
-                              0xFF4CAF50,
-                            ).withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            LucideIcons.partyPopper,
-                            color: Color(0xFF4CAF50),
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Everyone is caught up!',
-                          style: textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'All your bonds are looking healthy 🎉',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final item = needsAttention[index];
-                      final person = item['person'] as Person;
-                      final status = item['status'] as RelationshipTargetStatus;
-                      return _AttentionCard(
-                        person: person,
-                        status: status,
-                        onTap: () => context.go('/people/${person.id}'),
-                        onLog: () => context.go('/people/${person.id}/log'),
-                      );
-                    }, childCount: needsAttention.length),
-                  ),
-                ),
-
-              // ── Recently Contacted Section ──────────────────────────────
-              SliverToBoxAdapter(child: _RecentlyContactedSection()),
-            ],
-          ),
-        );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Error loading data: $err')),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, stack) =>
+              Center(child: Text('Error loading data: $err')),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: NeoPalette.inkBlack,
+        foregroundColor: Colors.white,
+        elevation: 4,
         onPressed: () {
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
+            backgroundColor: Colors.transparent,
             builder: (sheetContext) {
               return DraggableScrollableSheet(
-                initialChildSize: 0.6,
+                initialChildSize: 0.65,
                 minChildSize: 0.4,
                 maxChildSize: 0.9,
                 expand: false,
@@ -311,316 +504,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             },
           );
         },
-        icon: const Icon(LucideIcons.plusCircle),
-        label: const Text('Log'),
-      ),
-    );
-  }
-}
-
-// ── Health Header Card ─────────────────────────────────────────────────────
-
-class _HealthHeaderCard extends StatelessWidget {
-  final int strong, neutral, fading, total;
-  final double strongRatio;
-  const _HealthHeaderCard({
-    required this.strong,
-    required this.neutral,
-    required this.fading,
-    required this.total,
-    required this.strongRatio,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isDark
-              ? [
-                  cs.primary.withValues(alpha: 0.7),
-                  cs.primary.withValues(alpha: 0.45),
-                  cs.tertiary.withValues(alpha: 0.55),
-                ]
-              : [
-                  cs.primary,
-                  cs.primary.withValues(alpha: 0.75),
-                  cs.tertiary.withValues(alpha: 0.85),
-                ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(LucideIcons.heartPulse, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                'Relationship Health',
-                style: tt.titleSmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '$total people',
-                style: tt.labelSmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _StatPill(
-                count: strong,
-                label: 'Strong',
-                color: const Color(0xFF4CAF50),
-              ),
-              _StatPill(
-                count: neutral,
-                label: 'Neutral',
-                color: const Color(0xFFFFC107),
-              ),
-              _StatPill(
-                count: fading,
-                label: 'Fading',
-                color: const Color(0xFFF44336),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Progress bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: total == 0 ? 0 : strongRatio,
-              backgroundColor: Colors.white.withValues(alpha: 0.25),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFF4CAF50),
-              ),
-              minHeight: 6,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            total == 0
-                ? 'No connections yet'
-                : '${(strongRatio * 100).round()}% of your bonds are strong',
-            style: tt.labelSmall?.copyWith(
-              color: Colors.white.withValues(alpha: 0.75),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatPill extends StatelessWidget {
-  final int count;
-  final String label;
-  final Color color;
-  const _StatPill({
-    required this.count,
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Column(
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '$count',
-          style: tt.titleLarge?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Text(
-          label,
-          style: tt.labelSmall?.copyWith(
-            color: Colors.white.withValues(alpha: 0.75),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Attention Card ─────────────────────────────────────────────────────────
-
-class _AttentionCard extends StatelessWidget {
-  final Person person;
-  final RelationshipTargetStatus status;
-  final VoidCallback onTap;
-  final VoidCallback onLog;
-  const _AttentionCard({
-    required this.person,
-    required this.status,
-    required this.onTap,
-    required this.onLog,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final avatarColor = avatarColorFromName(person.name);
-    final score = status.baseScore;
-    final hColor = healthColor(score);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(16),
-        elevation: 0,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: hColor, width: 4)),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            child: Row(
-              children: [
-                // Avatar
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: avatarColor,
-                  child: Text(
-                    person.name[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        person.name,
-                        style: tt.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: hColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Health: $score%',
-                            style: tt.bodySmall?.copyWith(
-                              color: cs.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Icon(
-                            LucideIcons.calendarClock,
-                            size: 12,
-                            color: status.daysOverdue > 0
-                                ? const Color(0xFFF44336)
-                                : cs.onSurface.withValues(alpha: 0.4),
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            status.daysOverdue == 0
-                                ? 'Due Today'
-                                : status.daysOverdue > 0
-                                ? 'Overdue by ${status.daysOverdue} days'
-                                : 'Due in ${status.daysOverdue.abs()} days',
-                            style: tt.bodySmall?.copyWith(
-                              color: status.daysOverdue > 0
-                                  ? const Color(0xFFF44336)
-                                  : cs.onSurface.withValues(alpha: 0.5),
-                              fontWeight: status.daysOverdue > 0
-                                  ? FontWeight.w600
-                                  : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Actions
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (person.phoneNumber != null &&
-                        person.phoneNumber!.trim().isNotEmpty) ...[
-                      IconButton.filledTonal(
-                        onPressed: () =>
-                            ContactActionHelper.call(person.phoneNumber!),
-                        icon: const Icon(LucideIcons.phone, size: 14),
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'Call ${person.name}',
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.12),
-                          foregroundColor: const Color(0xFF2563EB),
-                          padding: const EdgeInsets.all(8),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    FilledButton.tonal(
-                      onPressed: onLog,
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(LucideIcons.messageCircle, size: 14),
-                          SizedBox(width: 4),
-                          Text('Log', style: TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+        icon: const Icon(LucideIcons.plusCircle, size: 18),
+        label: Text(
+          'Quick Log',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
           ),
         ),
       ),
@@ -634,34 +523,27 @@ class _RecentlyContactedSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recentAsync = ref.watch(recentlyContactedPeopleProvider);
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 3,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: cs.primary,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Recently Contacted',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: NeoPalette.textPrimary,
+                  letterSpacing: -0.3,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'Recently Contacted',
-                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
           recentAsync.when(
             data: (contacts) {
               if (contacts.isEmpty) {
@@ -670,22 +552,29 @@ class _RecentlyContactedSection extends ConsumerWidget {
                   child: Center(
                     child: Text(
                       'No interactions logged yet.',
-                      style: tt.bodySmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.5),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: NeoPalette.textSecondary,
                       ),
                     ),
                   ),
                 );
               }
               return Column(
-                children: contacts.map((contact) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                children: contacts.take(5).map((contact) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: NeoPalette.surfaceWhite,
+                      borderRadius: BorderRadius.circular(NeoPalette.radiusSm),
+                      border: Border.all(color: NeoPalette.cardBorder),
+                      boxShadow: NeoPalette.shadowSoft,
+                    ),
                     child: Material(
-                      color: cs.surface,
-                      borderRadius: BorderRadius.circular(12),
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(NeoPalette.radiusSm),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(NeoPalette.radiusSm),
                         onTap: () => context.go('/people/${contact.personId}'),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -696,15 +585,14 @@ class _RecentlyContactedSection extends ConsumerWidget {
                             children: [
                               CircleAvatar(
                                 radius: 18,
-                                backgroundColor: avatarColorFromName(
-                                  contact.personName,
-                                ),
+                                backgroundColor:
+                                    avatarColorFromName(contact.personName),
                                 child: Text(
                                   contact.personName[0].toUpperCase(),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 14,
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),
@@ -715,8 +603,10 @@ class _RecentlyContactedSection extends ConsumerWidget {
                                   children: [
                                     Text(
                                       contact.personName,
-                                      style: tt.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: NeoPalette.textPrimary,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
@@ -724,18 +614,15 @@ class _RecentlyContactedSection extends ConsumerWidget {
                                       children: [
                                         Icon(
                                           _iconForType(contact.type),
-                                          size: 12,
-                                          color: cs.onSurface.withValues(
-                                            alpha: 0.4,
-                                          ),
+                                          size: 11,
+                                          color: NeoPalette.textMuted,
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           contact.type,
-                                          style: tt.labelSmall?.copyWith(
-                                            color: cs.onSurface.withValues(
-                                              alpha: 0.5,
-                                            ),
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 12,
+                                            color: NeoPalette.textSecondary,
                                           ),
                                         ),
                                       ],
@@ -744,9 +631,11 @@ class _RecentlyContactedSection extends ConsumerWidget {
                                 ),
                               ),
                               Text(
-                                timeago.format(contact.date),
-                                style: tt.labelSmall?.copyWith(
-                                  color: cs.onSurface.withValues(alpha: 0.5),
+                                timeago.format(contact.date, locale: 'en_short'),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: NeoPalette.textMuted,
                                 ),
                               ),
                             ],
@@ -802,24 +691,21 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
     final peopleAsync = ref.watch(allPeopleProvider);
 
     return Container(
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: const BoxDecoration(
+        color: NeoPalette.surfaceWhite,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
-          // Drag handle
           Container(
             width: 40,
             height: 4,
             margin: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
-              color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+              color: NeoPalette.cardBorder,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -830,27 +716,30 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
                 Expanded(
                   child: Text(
                     'Log Interaction For...',
-                    style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: NeoPalette.textPrimary,
+                    ),
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(LucideIcons.x),
+                  icon: const Icon(LucideIcons.x, size: 20),
                 ),
               ],
             ),
           ),
-          // Search Field
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Search people...',
-                prefixIcon: const Icon(LucideIcons.search, size: 20),
+                prefixIcon: const Icon(LucideIcons.search, size: 18),
                 filled: true,
-                fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                fillColor: NeoPalette.canvasLight,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(NeoPalette.radiusPill),
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -864,7 +753,6 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
             ),
           ),
           const SizedBox(height: 12),
-          // List
           Expanded(
             child: peopleAsync.when(
               data: (people) {
@@ -876,8 +764,8 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
                   return Center(
                     child: Text(
                       'No people found.',
-                      style: TextStyle(
-                        color: cs.onSurface.withValues(alpha: 0.5),
+                      style: GoogleFonts.plusJakartaSans(
+                        color: NeoPalette.textSecondary,
                       ),
                     ),
                   );
@@ -902,23 +790,25 @@ class _LogInteractionSheetState extends ConsumerState<_LogInteractionSheet> {
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
-                            fontSize: 16,
+                            fontSize: 14,
                           ),
                         ),
                       ),
                       title: Text(
                         person.name,
-                        style: tt.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: NeoPalette.textPrimary,
                         ),
                       ),
-                      trailing: Icon(
+                      trailing: const Icon(
                         LucideIcons.chevronRight,
-                        size: 20,
-                        color: cs.onSurface.withValues(alpha: 0.3),
+                        size: 18,
+                        color: NeoPalette.textMuted,
                       ),
                       onTap: () {
-                        Navigator.pop(context); // Close sheet
+                        Navigator.pop(context);
                         context.go('/people/${person.id}/log');
                       },
                     );
@@ -941,57 +831,67 @@ class _WelcomeEmptyDashboardCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: 0.45),
-        ),
+        color: NeoPalette.surfaceWhite,
+        borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+        border: Border.all(color: NeoPalette.cardBorder),
+        boxShadow: NeoPalette.shadowCard,
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: cs.primary.withValues(alpha: 0.1),
+            decoration: const BoxDecoration(
+              color: NeoPalette.mintBg,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              LucideIcons.contact,
+            child: const Icon(
+              LucideIcons.sparkles,
               size: 32,
-              color: cs.primary,
+              color: NeoPalette.mintText,
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'Track Your Connections',
-            style: tt.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+            'Keep Your Circle Close',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: NeoPalette.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Select friends, family, or colleagues from your contacts and set how often you want to reconnect. Linksy monitors calls and reminds you when someone is overdue.',
+            'Add friends, family, or colleagues from your contacts and set your reconnect target. Linksy will guide your outreach with zero effort.',
             textAlign: TextAlign.center,
-            style: tt.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-              height: 1.45,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: NeoPalette.textSecondary,
+              height: 1.4,
             ),
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
+          ElevatedButton.icon(
             onPressed: onImport,
-            icon: const Icon(LucideIcons.userPlus, size: 18),
-            label: const Text('Select Contacts to Track'),
-            style: FilledButton.styleFrom(
+            icon: const Icon(LucideIcons.userPlus, size: 16),
+            label: Text(
+              'Select Contacts to Track',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: NeoPalette.inkBlack,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(
-                horizontal: 24,
+                horizontal: 22,
                 vertical: 12,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(NeoPalette.radiusPill),
               ),
             ),
           ),
@@ -1000,4 +900,3 @@ class _WelcomeEmptyDashboardCard extends StatelessWidget {
     );
   }
 }
-

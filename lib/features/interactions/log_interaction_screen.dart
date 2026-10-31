@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-
 import 'package:drift/drift.dart' hide Column;
 
 import '../../core/database/database.dart';
 import '../../core/database/repositories/interactions_repository.dart';
+import '../../core/database/repositories/people_repository.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/neo_palette.dart';
 
-// Interaction types with icons and labels
-const _interactionTypes = [
+const _channelTypes = [
   ('Message', LucideIcons.messageCircle),
   ('Call', LucideIcons.phone),
-  ('Meeting', LucideIcons.coffee),
-  ('Note', LucideIcons.fileText),
+  ('Coffee / Meet', LucideIcons.coffee),
+  ('Quick Note', LucideIcons.fileText),
 ];
 
 class LogInteractionScreen extends ConsumerStatefulWidget {
   final int personId;
   final Interaction? existingInteraction;
+
   const LogInteractionScreen({
     super.key,
     required this.personId,
@@ -33,8 +36,11 @@ class LogInteractionScreen extends ConsumerStatefulWidget {
 class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _notesController = TextEditingController();
-  String _type = 'Message';
-  int _energyRating = 3;
+
+  // Mode: 0 = Quick Log, 1 = Plan Future
+  int _modeIndex = 0;
+  String _type = 'Call';
+  int _energyRating = 5;
   late DateTime _selectedDate;
 
   @override
@@ -43,7 +49,7 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
     final existing = widget.existingInteraction;
     if (existing != null) {
       _type = existing.type;
-      _energyRating = existing.energyRating ?? 3;
+      _energyRating = existing.energyRating ?? 4;
       _notesController.text = existing.notes ?? '';
       _selectedDate = existing.date;
     } else {
@@ -84,6 +90,16 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
       }
 
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_modeIndex == 0 ? 'Interaction logged!' : 'Catch-up scheduled!'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: NeoPalette.inkBlack,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(NeoPalette.radiusPill),
+            ),
+          ),
+        );
         context.pop();
       }
     }
@@ -91,287 +107,784 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
+    final personAsync = ref.watch(personStreamProvider(widget.personId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          _isEditing ? 'Edit Interaction' : 'Log Interaction',
-          style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton.icon(
-              onPressed: _save,
-              icon: const Icon(LucideIcons.check, size: 16),
-              label: const Text('Save'),
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-        ],
+      backgroundColor: NeoPalette.canvasLight,
+      body: personAsync.when(
+        data: (person) => _buildContent(person),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, _) => Center(child: Text('Error: $err')),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          children: [
-            // ── Type Selector ───────────────────────────────────────────
-            _SectionCard(
-              icon: LucideIcons.layoutGrid,
-              title: 'Interaction Type',
-              child: Row(
-                children: _interactionTypes.map((entry) {
-                  final (label, icon) = entry;
-                  final isSelected = _type == label;
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _type = label),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? cs.primaryContainer
-                                : cs.surfaceContainerHighest.withValues(
-                                    alpha: 0.4,
-                                  ),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected
-                                  ? cs.primary
-                                  : cs.outlineVariant.withValues(alpha: 0.5),
-                              width: isSelected ? 1.5 : 1,
+    );
+  }
+
+  Widget _buildContent(Person person) {
+    final avatarBg = avatarColorFromName(person.name);
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── 1. Curved Hero Header with Smooth Curves ─────────────────────
+          Stack(
+            children: [
+              // Pastel Teal / Mint Curved Background
+              CustomPaint(
+                size: const Size(double.infinity, 240),
+                painter: _CurvedHeroPainter(),
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top Row: Back button <, Center Title, Options ::
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _CircularNavButton(
+                            icon: LucideIcons.arrowLeft,
+                            onTap: () => context.pop(),
+                            tooltip: 'Back',
+                          ),
+                          Text(
+                            _isEditing ? 'Edit Catch-up' : 'Plan Your Catch-up',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: NeoPalette.textPrimary,
                             ),
                           ),
-                          child: Column(
-                            children: [
-                              Icon(
-                                icon,
-                                size: 20,
-                                color: isSelected
-                                    ? cs.onPrimaryContainer
-                                    : cs.onSurface.withValues(alpha: 0.4),
+                          _CircularNavButton(
+                            icon: LucideIcons.moreHorizontal,
+                            onTap: () {},
+                            tooltip: 'Options',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      // Hero Heading
+                      Text(
+                        'Deepen Your\nConnection',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          color: NeoPalette.textPrimary,
+                          letterSpacing: -0.5,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Log thoughts & capture commitments while fresh.',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: NeoPalette.mintText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // ── 2. Floating Form Card (Overlapping the Hero) ──────────────────
+          Transform.translate(
+            offset: const Offset(0, -20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: NeoPalette.surfaceWhite,
+                  borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+                  border: Border.all(color: NeoPalette.cardBorder),
+                  boxShadow: NeoPalette.shadowCard,
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Segmented Pill Toggle: [ Quick Log ] vs [ Future Catch-up ]
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: NeoPalette.canvasLight,
+                          borderRadius:
+                              BorderRadius.circular(NeoPalette.radiusPill),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _SegmentPill(
+                                label: 'Quick Log',
+                                icon: LucideIcons.checkCheck,
+                                isSelected: _modeIndex == 0,
+                                onTap: () => setState(() => _modeIndex = 0),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                label,
-                                style: tt.labelSmall?.copyWith(
-                                  fontWeight: isSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: isSelected
-                                      ? cs.onPrimaryContainer
-                                      : cs.onSurface.withValues(alpha: 0.6),
+                            ),
+                            Expanded(
+                              child: _SegmentPill(
+                                label: 'Future Catch-up',
+                                icon: LucideIcons.calendarClock,
+                                isSelected: _modeIndex == 1,
+                                onTap: () => setState(() => _modeIndex = 1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // Connected Fields with Swap Icon: Person ⇄ Channel
+                      Stack(
+                        alignment: Alignment.centerRight,
+                        children: [
+                          Column(
+                            children: [
+                              // Person Row
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
                                 ),
+                                decoration: BoxDecoration(
+                                  color: NeoPalette.canvasLight,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 18,
+                                      backgroundColor: avatarBg,
+                                      child: Text(
+                                        person.name.isNotEmpty
+                                            ? person.name[0].toUpperCase()
+                                            : '?',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'WITH',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: NeoPalette.textMuted,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                          Text(
+                                            person.name,
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w700,
+                                              color: NeoPalette.textPrimary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: NeoPalette.surfaceWhite,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: NeoPalette.cardBorder,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        person.category,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: NeoPalette.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              // Channel Selector Container
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: NeoPalette.canvasLight,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'INTERACTION CHANNEL',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: NeoPalette.textMuted,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: _channelTypes.map((c) {
+                                        final (name, icon) = c;
+                                        final isSelected = _type == name;
+                                        return Expanded(
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 2,
+                                            ),
+                                            child: InkWell(
+                                              onTap: () =>
+                                                  setState(() => _type = name),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: AnimatedContainer(
+                                                duration: const Duration(
+                                                  milliseconds: 180,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: isSelected
+                                                      ? NeoPalette.inkBlack
+                                                      : NeoPalette.surfaceWhite,
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: isSelected
+                                                        ? NeoPalette.inkBlack
+                                                        : NeoPalette.cardBorder,
+                                                  ),
+                                                ),
+                                                child: Column(
+                                                  children: [
+                                                    Icon(
+                                                      icon,
+                                                      size: 16,
+                                                      color: isSelected
+                                                          ? Colors.white
+                                                          : NeoPalette
+                                                              .textPrimary,
+                                                    ),
+                                                    const SizedBox(height: 3),
+                                                    Text(
+                                                      name.split(' ').first,
+                                                      style: GoogleFonts
+                                                          .plusJakartaSans(
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: isSelected
+                                                            ? Colors.white
+                                                            : NeoPalette
+                                                                .textSecondary,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Date & Time Field
+                      InkWell(
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                          );
+                          if (date != null && mounted) {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(_selectedDate),
+                            );
+                            setState(() {
+                              _selectedDate = DateTime(
+                                date.year,
+                                date.month,
+                                date.day,
+                                time?.hour ?? _selectedDate.hour,
+                                time?.minute ?? _selectedDate.minute,
+                              );
+                            });
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: NeoPalette.canvasLight,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: const BoxDecoration(
+                                  color: NeoPalette.skyBg,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  LucideIcons.calendar,
+                                  size: 16,
+                                  color: NeoPalette.skyText,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'DATE & TIME',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: NeoPalette.textMuted,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year} at ${_formatTime(_selectedDate)}',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: NeoPalette.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                LucideIcons.chevronRight,
+                                size: 16,
+                                color: NeoPalette.textMuted,
                               ),
                             ],
                           ),
                         ),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 16),
 
-            // ── Date & Time Picker ────────────────────────────────────────
-            _SectionCard(
-              icon: LucideIcons.calendar,
-              title: 'Date & Time',
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: _selectedDate,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now(),
-                        );
-                        if (date != null) {
-                          setState(() {
-                            _selectedDate = DateTime(
-                              date.year,
-                              date.month,
-                              date.day,
-                              _selectedDate.hour,
-                              _selectedDate.minute,
-                            );
-                          });
-                        }
-                      },
-                      child: Container(
+                      const SizedBox(height: 12),
+
+                      // Energy Vibe Selector (1 to 5)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: NeoPalette.canvasLight,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'ENERGY VIBE AFTER',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: NeoPalette.textMuted,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                Text(
+                                  _energyLabelText(_energyRating),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: _energyColor(_energyRating),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [1, 2, 3, 4, 5].map((rating) {
+                                final isSelected = _energyRating == rating;
+                                return InkWell(
+                                  onTap: () =>
+                                      setState(() => _energyRating = rating),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? _energyColor(rating)
+                                          : NeoPalette.surfaceWhite,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? _energyColor(rating)
+                                            : NeoPalette.cardBorder,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _energyEmoji(rating),
+                                      style: const TextStyle(fontSize: 18),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Context Notes Input
+                      Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                          horizontal: 14,
+                          vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: cs.surfaceContainerHighest.withValues(
-                            alpha: 0.4,
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: cs.outlineVariant.withValues(alpha: 0.5),
-                          ),
+                          color: NeoPalette.canvasLight,
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              LucideIcons.calendar,
-                              size: 16,
-                              color: cs.primary,
-                            ),
-                            const SizedBox(width: 8),
                             Text(
-                              '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                              style: tt.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w500,
+                              'INTERACTION NOTES',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: NeoPalette.textMuted,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextFormField(
+                              controller: _notesController,
+                              maxLines: 3,
+                              decoration: const InputDecoration(
+                                hintText:
+                                    'What did you discuss? Key takeaways or commitments...',
+                                border: InputBorder.none,
+                                filled: false,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: NeoPalette.textPrimary,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.fromDateTime(_selectedDate),
-                        );
-                        if (time != null) {
-                          setState(() {
-                            _selectedDate = DateTime(
-                              _selectedDate.year,
-                              _selectedDate.month,
-                              _selectedDate.day,
-                              time.hour,
-                              time.minute,
-                            );
-                          });
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerHighest.withValues(
-                            alpha: 0.4,
+
+                      const SizedBox(height: 20),
+
+                      // Big Full-Width Pitch Black Pill Action Button
+                      InkWell(
+                        onTap: _save,
+                        borderRadius:
+                            BorderRadius.circular(NeoPalette.radiusPill),
+                        child: Container(
+                          height: 52,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: NeoPalette.inkBlack,
+                            borderRadius:
+                                BorderRadius.circular(NeoPalette.radiusPill),
+                            boxShadow: NeoPalette.shadowCard,
                           ),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: cs.outlineVariant.withValues(alpha: 0.5),
+                          child: Text(
+                            _isEditing
+                                ? 'Update Interaction'
+                                : 'Save Interaction ✨',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              LucideIcons.clock,
-                              size: 16,
-                              color: cs.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _formatTime(_selectedDate),
-                              style: tt.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Notes Card ──────────────────────────────────────────────
-            _SectionCard(
-              icon: LucideIcons.edit,
-              title: 'Notes',
-              child: TextFormField(
-                controller: _notesController,
-                decoration: InputDecoration(
-                  hintText: 'What happened? How did it feel?',
-                  hintStyle: TextStyle(
-                    color: cs.onSurface.withValues(alpha: 0.4),
-                    fontSize: 13,
-                  ),
-                  border: InputBorder.none,
-                  filled: false,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                maxLines: 5,
-                style: tt.bodyMedium,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Energy Rating Card ──────────────────────────────────────
-            _SectionCard(
-              icon: LucideIcons.zap,
-              title: 'Energy After',
-              child: Column(
-                children: [
-                  // Emoji label display
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _EnergyLabel(
-                        emoji: '😩',
-                        label: 'Draining',
-                        active: _energyRating == 1,
-                      ),
-                      _EnergyLabel(
-                        emoji: '😐',
-                        label: 'Neutral',
-                        active: _energyRating == 3,
-                      ),
-                      _EnergyLabel(
-                        emoji: '✨',
-                        label: 'Energizing',
-                        active: _energyRating == 5,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: _getEnergyColor(_energyRating),
-                      thumbColor: _getEnergyColor(_energyRating),
-                      inactiveTrackColor: cs.onSurface.withValues(alpha: 0.12),
-                      overlayColor: _getEnergyColor(
-                        _energyRating,
-                      ).withValues(alpha: 0.12),
-                      trackHeight: 6,
-                    ),
-                    child: Slider(
-                      value: _energyRating.toDouble(),
-                      min: 1,
-                      max: 5,
-                      divisions: 4,
-                      onChanged: (val) {
-                        setState(() {
-                          _energyRating = val.toInt();
-                        });
-                      },
-                    ),
+                ),
+              ),
+            ),
+          ),
+
+          // ── 3. Relationship Sparks / Commitment Vouchers (Bottom Section) ─
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Relationship Sparks',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: NeoPalette.textPrimary,
+                    letterSpacing: -0.3,
                   ),
-                ],
+                ),
+                Text(
+                  'Quick Templates',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: NeoPalette.skyText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Horizontal Tilted Voucher Cards (Inspired by the Voucher cards in image)
+          SizedBox(
+            height: 120,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              children: [
+                _VoucherCard(
+                  title: 'Ask About Work',
+                  subtitle: '"How is the new project or team going?"',
+                  badge: '30% Faster',
+                  bgColor: NeoPalette.lavenderBg,
+                  accentColor: NeoPalette.lavenderText,
+                  icon: LucideIcons.briefcase,
+                  onApply: () {
+                    final curr = _notesController.text;
+                    _notesController.text = curr.isEmpty
+                        ? 'Discussed work & new project progress.'
+                        : '$curr\nDiscussed work & new project progress.';
+                  },
+                ),
+                _VoucherCard(
+                  title: 'Life Check-in',
+                  subtitle: '"How are you feeling and holding up lately?"',
+                  badge: 'High Warmth',
+                  bgColor: NeoPalette.mintBg,
+                  accentColor: NeoPalette.mintText,
+                  icon: LucideIcons.heart,
+                  onApply: () {
+                    final curr = _notesController.text;
+                    _notesController.text = curr.isEmpty
+                        ? 'General life check-in and catch-up.'
+                        : '$curr\nGeneral life check-in and catch-up.';
+                  },
+                ),
+                _VoucherCard(
+                  title: 'Future Promise',
+                  subtitle: '"Promised to grab coffee or send recommendation"',
+                  badge: 'Follow-up',
+                  bgColor: NeoPalette.peachBg,
+                  accentColor: NeoPalette.peachText,
+                  icon: LucideIcons.bookmark,
+                  onApply: () {
+                    final curr = _notesController.text;
+                    _notesController.text = curr.isEmpty
+                        ? 'Follow-up commitment: Meet for coffee next week.'
+                        : '$curr\nFollow-up commitment: Meet for coffee next week.';
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  static String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour < 12 ? 'AM' : 'PM';
+    return '$hour:$minute $ampm';
+  }
+
+  static String _energyEmoji(int rating) {
+    switch (rating) {
+      case 1:
+        return '😩';
+      case 2:
+        return '😕';
+      case 3:
+        return '😐';
+      case 4:
+        return '😊';
+      case 5:
+        return '⚡';
+      default:
+        return '😐';
+    }
+  }
+
+  static String _energyLabelText(int rating) {
+    switch (rating) {
+      case 1:
+        return '1/5 Draining';
+      case 2:
+        return '2/5 Low Energy';
+      case 3:
+        return '3/5 Neutral';
+      case 4:
+        return '4/5 Good Vibes';
+      case 5:
+        return '5/5 Energizing!';
+      default:
+        return 'Neutral';
+    }
+  }
+
+  static Color _energyColor(int rating) {
+    switch (rating) {
+      case 1:
+        return const Color(0xFFEF4444);
+      case 2:
+        return const Color(0xFFF97316);
+      case 3:
+        return const Color(0xFFEAB308);
+      case 4:
+        return const Color(0xFF10B981);
+      case 5:
+        return const Color(0xFF059669);
+      default:
+        return const Color(0xFF6B7280);
+    }
+  }
+}
+
+// ── Reusable Component Widgets for Screen 2 ────────────────────────────────
+
+class _CircularNavButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  const _CircularNavButton({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: NeoPalette.surfaceWhite,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: NeoPalette.cardBorder),
+              boxShadow: NeoPalette.shadowSoft,
+            ),
+            child: Icon(icon, size: 18, color: NeoPalette.textPrimary),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentPill extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SegmentPill({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(NeoPalette.radiusPill),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? NeoPalette.inkBlack : Colors.transparent,
+          borderRadius: BorderRadius.circular(NeoPalette.radiusPill),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? Colors.white : NeoPalette.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? Colors.white : NeoPalette.textSecondary,
               ),
             ),
           ],
@@ -379,107 +892,152 @@ class _LogInteractionScreenState extends ConsumerState<LogInteractionScreen> {
       ),
     );
   }
-
-  Color _getEnergyColor(int rating) {
-    const colors = [
-      Color(0xFFF44336), // 1 – draining
-      Color(0xFFFF7043), // 2
-      Color(0xFFFFC107), // 3 – neutral
-      Color(0xFF8BC34A), // 4
-      Color(0xFF4CAF50), // 5 – energizing
-    ];
-    return colors[(rating - 1).clamp(0, 4)];
-  }
-
-  String _formatTime(DateTime dt) {
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final period = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
-  }
 }
 
-// ── Section Card ───────────────────────────────────────────────────────────
-
-class _SectionCard extends StatelessWidget {
-  final IconData icon;
+class _VoucherCard extends StatelessWidget {
   final String title;
-  final Widget child;
+  final String subtitle;
+  final String badge;
+  final Color bgColor;
+  final Color accentColor;
+  final IconData icon;
+  final VoidCallback onApply;
 
-  const _SectionCard({
-    required this.icon,
+  const _VoucherCard({
     required this.title,
-    required this.child,
+    required this.subtitle,
+    required this.badge,
+    required this.bgColor,
+    required this.accentColor,
+    required this.icon,
+    required this.onApply,
   });
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
     return Container(
+      width: 240,
+      margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+        boxShadow: NeoPalette.shadowSoft,
       ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: cs.primary),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: tt.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: cs.onSurface,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(NeoPalette.radiusCard),
+          onTap: onApply,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, size: 14, color: accentColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          title,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: accentColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: NeoPalette.surfaceWhite,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        badge,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Expanded(
+                  child: Text(
+                    subtitle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: NeoPalette.textPrimary.withValues(alpha: 0.85),
+                      height: 1.3,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Tap to insert +',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: accentColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 14),
-          child,
-        ],
+        ),
       ),
     );
   }
 }
 
-// ── Energy Label ───────────────────────────────────────────────────────────
+class _CurvedHeroPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFD6F2EB) // Soft pastel mint/cyan
+      ..style = PaintingStyle.fill;
 
-class _EnergyLabel extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final bool active;
+    final path = Path()
+      ..lineTo(0, size.height - 40)
+      ..quadraticBezierTo(
+        size.width * 0.5,
+        size.height,
+        size.width,
+        size.height - 40,
+      )
+      ..lineTo(size.width, 0)
+      ..close();
 
-  const _EnergyLabel({
-    required this.emoji,
-    required this.label,
-    required this.active,
-  });
+    canvas.drawPath(path, paint);
+
+    // Subtle decorative concentric wave rings in corner
+    final ringPaint = Paint()
+      ..color = const Color(0xFFBCEAE0).withValues(alpha: 0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    canvas.drawCircle(Offset(size.width * 0.85, 40), 50, ringPaint);
+    canvas.drawCircle(Offset(size.width * 0.85, 40), 75, ringPaint);
+  }
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    return Column(
-      children: [
-        AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 150),
-          style: TextStyle(fontSize: active ? 26 : 20),
-          child: Text(emoji),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: tt.labelSmall?.copyWith(
-            color: active ? cs.primary : cs.onSurface.withValues(alpha: 0.4),
-            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ],
-    );
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -93,20 +93,30 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: child,
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            top: BorderSide(color: Color(0xFFE6ECF1), width: 1),
+          ),
           boxShadow: [
             BoxShadow(
-              color: colorScheme.shadow.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, -2),
+              color: Color(0x0A0F172A),
+              blurRadius: 16,
+              offset: Offset(0, -4),
             ),
           ],
         ),
         child: NavigationBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          height: 64,
+          indicatorColor: const Color(0xFFE7F1FB), // NeoPalette.skyBg
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           selectedIndex: _calculateSelectedIndex(context),
           onDestinationSelected: (int index) {
             switch (index) {
@@ -123,18 +133,18 @@ class AppShell extends StatelessWidget {
           },
           destinations: const [
             NavigationDestination(
-              icon: Icon(LucideIcons.bell),
-              selectedIcon: Icon(LucideIcons.bellRing),
-              label: 'Reminders',
+              icon: Icon(LucideIcons.home, size: 20),
+              selectedIcon: Icon(LucideIcons.home, size: 20, color: Color(0xFF0284C7)),
+              label: 'Hub',
             ),
             NavigationDestination(
-              icon: Icon(LucideIcons.users),
-              selectedIcon: Icon(LucideIcons.users),
-              label: 'Contacts',
+              icon: Icon(LucideIcons.users, size: 20),
+              selectedIcon: Icon(LucideIcons.users, size: 20, color: Color(0xFF0284C7)),
+              label: 'Circle',
             ),
             NavigationDestination(
-              icon: Icon(LucideIcons.barChart2),
-              selectedIcon: Icon(LucideIcons.barChart2),
+              icon: Icon(LucideIcons.pieChart, size: 20),
+              selectedIcon: Icon(LucideIcons.pieChart, size: 20, color: Color(0xFF0284C7)),
               label: 'Insights',
             ),
           ],

@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:call_log/call_log.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/database.dart';
 import '../database/repositories/interactions_repository.dart';
