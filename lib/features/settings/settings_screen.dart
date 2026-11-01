@@ -254,13 +254,47 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 32),
           Center(
-            child: Text(
-              'Linksy v1.0.0',
-              style: tt.labelSmall?.copyWith(
-                color: cs.onSurface.withValues(alpha: 0.5),
-              ),
+            child: Column(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Linksy v1.0.0',
+                  style: tt.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                Text(
+                  'Mindful Relationship Hub',
+                  style: tt.labelSmall?.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 16),
         ],
       ),
     );

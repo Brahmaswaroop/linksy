@@ -47,7 +47,7 @@ class NotificationService {
     // 2. Initialize Native Settings
     // Ensure you have an icon named 'ic_launcher' in your android/app/src/main/res/mipmap folders
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@mipmap/launcher_icon');
 
     const DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(

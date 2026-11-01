@@ -35,6 +35,24 @@ class NeoTopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
       child: Row(
         children: [
+          // Linksy App Logo
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: NeoPalette.shadowSoft,
+              border: Border.all(color: NeoPalette.cardBorder),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/logo.png',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
           // Karma Points Badge (Pill button with orange star)
           InkWell(
             onTap: onKarmaTap,

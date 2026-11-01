@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -9,7 +10,6 @@ import '../../core/database/database.dart';
 import '../../core/database/repositories/people_repository.dart';
 import '../../core/database/repositories/labels_repository.dart';
 import '../../core/services/contacts_service.dart';
-import '../../core/utils/frequency_formatter.dart';
 
 class AddPersonScreen extends ConsumerStatefulWidget {
   final int? personId;
@@ -27,6 +27,8 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
   late TextEditingController _notesController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
+  late TextEditingController _frequencyCountController;
+  String _frequencyUnit = 'Weeks';
   String? _systemContactId;
   String? _avatarPath;
   DateTime? _birthday;
@@ -47,6 +49,8 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
     _notesController = TextEditingController();
     _phoneController = TextEditingController();
     _emailController = TextEditingController();
+    _frequencyCountController = TextEditingController(text: '2');
+    _frequencyUnit = 'Weeks';
     if (widget.personId != null) {
       _loadPersonData();
     }
@@ -73,6 +77,7 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
           _birthday = person.birthday;
           _priorityLevel = person.priorityLevel;
           _targetFrequencyDays = person.targetFrequencyDays;
+          _decomposeDaysToCountAndUnit(person.targetFrequencyDays);
           _selectedLabelIds.addAll(labels.map((e) => e.id));
           if (_categories.contains(person.category)) {
             _category = person.category;
@@ -133,7 +138,65 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
     _notesController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _frequencyCountController.dispose();
     super.dispose();
+  }
+
+  void _decomposeDaysToCountAndUnit(int days) {
+    if (days <= 0) days = 14;
+    if (days % 365 == 0 && days >= 365) {
+      _frequencyCountController.text = (days ~/ 365).toString();
+      _frequencyUnit = 'Years';
+    } else if (days % 30 == 0 && days >= 30) {
+      _frequencyCountController.text = (days ~/ 30).toString();
+      _frequencyUnit = 'Months';
+    } else if (days % 7 == 0 && days >= 7) {
+      _frequencyCountController.text = (days ~/ 7).toString();
+      _frequencyUnit = 'Weeks';
+    } else {
+      _frequencyCountController.text = days.toString();
+      _frequencyUnit = 'Days';
+    }
+  }
+
+  void _updateFrequencyFromInputs() {
+    final count = int.tryParse(_frequencyCountController.text.trim()) ?? 1;
+    final safeCount = count <= 0 ? 1 : count;
+    int multiplier = 1;
+    switch (_frequencyUnit) {
+      case 'Days':
+        multiplier = 1;
+        break;
+      case 'Weeks':
+        multiplier = 7;
+        break;
+      case 'Months':
+        multiplier = 30;
+        break;
+      case 'Years':
+        multiplier = 365;
+        break;
+    }
+    setState(() {
+      _targetFrequencyDays = (safeCount * multiplier).clamp(1, 3650);
+    });
+  }
+
+  void _applyPresetFrequency(int count, String unit) {
+    setState(() {
+      _frequencyCountController.text = count.toString();
+      _frequencyUnit = unit;
+    });
+    _updateFrequencyFromInputs();
+  }
+
+  String _formatFrequencyDisplay() {
+    final count = int.tryParse(_frequencyCountController.text.trim()) ?? 1;
+    final unitSingular = _frequencyUnit.endsWith('s')
+        ? _frequencyUnit.substring(0, _frequencyUnit.length - 1)
+        : _frequencyUnit;
+    final unitStr = count == 1 ? unitSingular : _frequencyUnit;
+    return 'Every $count $unitStr (${_targetFrequencyDays}d)';
   }
 
   void _save() async {
@@ -505,7 +568,7 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          formatTargetFrequency(_targetFrequencyDays),
+                          _formatFrequencyDisplay(),
                           style: tt.labelMedium?.copyWith(
                             color: cs.onPrimaryContainer,
                             fontWeight: FontWeight.w700,
@@ -514,61 +577,124 @@ class _AddPersonScreenState extends ConsumerState<AddPersonScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  // Editable Number Input + Interval Dropdown Row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Number input (e.g. 2, 3, 4)
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: _frequencyCountController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (_) => _updateFrequencyFromInputs(),
+                          textAlign: TextAlign.center,
+                          style: tt.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Every',
+                            hintText: '2',
+                            prefixIcon: const Icon(LucideIcons.calendarClock, size: 18),
+                            filled: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Interval Dropdown (Days, Weeks, Months, Years)
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _frequencyUnit,
+                          items: const [
+                            DropdownMenuItem(value: 'Days', child: Text('Days')),
+                            DropdownMenuItem(value: 'Weeks', child: Text('Weeks')),
+                            DropdownMenuItem(value: 'Months', child: Text('Months')),
+                            DropdownMenuItem(value: 'Years', child: Text('Years')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _frequencyUnit = val;
+                              });
+                              _updateFrequencyFromInputs();
+                            }
+                          },
+                          decoration: InputDecoration(
+                            labelText: 'Interval',
+                            filled: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Quick Presets',
+                    style: tt.labelSmall?.copyWith(
+                      color: cs.onSurface.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children:
-                        [
-                          (label: 'Weekly', days: 7),
-                          (label: '2 Weeks', days: 14),
-                          (label: 'Monthly', days: 30),
-                          (label: 'Quarterly', days: 90),
-                          (label: '6 Months', days: 180),
-                          (label: 'Yearly', days: 365),
-                        ].map((preset) {
-                          final isSelected =
-                              _targetFrequencyDays == preset.days;
-                          return ChoiceChip(
-                            label: Text(preset.label),
-                            selected: isSelected,
-                            onSelected: (selected) {
-                              if (selected) {
-                                setState(
-                                  () => _targetFrequencyDays = preset.days,
-                                );
-                              }
-                            },
-                            selectedColor: cs.primaryContainer,
-                            checkmarkColor: cs.onPrimaryContainer,
-                            side: BorderSide(
-                              color: isSelected
-                                  ? cs.primary
-                                  : cs.outlineVariant.withValues(alpha: 0.5),
-                            ),
-                            labelStyle: tt.labelMedium?.copyWith(
-                              color: isSelected
-                                  ? cs.onPrimaryContainer
-                                  : cs.onSurface,
-                              fontWeight: isSelected ? FontWeight.bold : null,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            visualDensity: VisualDensity.compact,
-                          );
-                        }).toList(),
-                  ),
-                  const SizedBox(height: 8),
-                  Slider(
-                    value: _targetFrequencyDays.clamp(1, 365).toDouble(),
-                    min: 1,
-                    max: 365,
-                    divisions: 364,
-                    label: formatTargetFrequency(_targetFrequencyDays),
-                    onChanged: (value) {
-                      setState(() {
-                        _targetFrequencyDays = value.toInt();
-                      });
-                    },
+                    children: [
+                      (label: 'Weekly', count: 1, unit: 'Weeks'),
+                      (label: '2 Weeks', count: 2, unit: 'Weeks'),
+                      (label: 'Monthly', count: 1, unit: 'Months'),
+                      (label: '2 Months', count: 2, unit: 'Months'),
+                      (label: '3 Months', count: 3, unit: 'Months'),
+                      (label: '6 Months', count: 6, unit: 'Months'),
+                      (label: 'Yearly', count: 1, unit: 'Years'),
+                    ].map((preset) {
+                      final isSelected =
+                          _frequencyCountController.text.trim() == preset.count.toString() &&
+                          _frequencyUnit == preset.unit;
+                      return ChoiceChip(
+                        label: Text(preset.label),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          if (selected) {
+                            _applyPresetFrequency(preset.count, preset.unit);
+                          }
+                        },
+                        selectedColor: cs.primaryContainer,
+                        checkmarkColor: cs.onPrimaryContainer,
+                        side: BorderSide(
+                          color: isSelected
+                              ? cs.primary
+                              : cs.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                        labelStyle: tt.labelMedium?.copyWith(
+                          color: isSelected
+                              ? cs.onPrimaryContainer
+                              : cs.onSurface,
+                          fontWeight: isSelected ? FontWeight.bold : null,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        visualDensity: VisualDensity.compact,
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
